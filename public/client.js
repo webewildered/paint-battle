@@ -227,15 +227,19 @@ class Client
 
         socket.emit('ready');
 
-        this.layout();
-        window.onresize = () =>
-        {
-            client.layout();
-            this.app.resize(window.innerWidth, window.innerHeight);
-            this.app.view.style.width = window.innerWidth;
-            this.app.view.style.height = window.innerHeight;
-            this.app.renderer.resize(window.innerWidth, window.innerHeight);
-        }
+        this.onResize(); // pixi scales incorrectly when res != 1, resize now to fix it
+        window.onresize = () => this.onResize();
+    }
+
+    onResize()
+    {
+        let w = window.innerWidth;
+        let h = window.innerHeight;
+        this.app.resize(w, h);
+        this.app.view.style.width = w;
+        this.app.view.style.height = h;
+        this.app.renderer.resize(w, h);
+        client.layout();
     }
 
     onReveal(cardId, deckId)
@@ -253,7 +257,7 @@ class Client
     layout()
     {
         this.boardContainer.x = 10;
-        this.boardContainer.y = Math.floor((this.app.view.height - this.boardContainer.height) / 2);
+        this.boardContainer.y = Math.floor((window.innerHeight - this.boardContainer.height) / 2);
 
         let playerX = this.boardContainer.x + this.boardContainer.width + 10;
         for (let i = 0; i < this.players.length; i++)
