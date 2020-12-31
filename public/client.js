@@ -106,7 +106,7 @@ class Client
 
         // Create the app
         this.app = new PIXI.Application({
-            resizeTo: document.body, backgroundColor: 0xeeeeee, resolution: window.devicePixelRatio || 1, antialias: true
+            width: window.innerWidth, height: window.innerHeight, backgroundColor: 0xeeeeee, resolution: window.devicePixelRatio || 1, antialias: true
         });
         document.body.appendChild(this.app.view);
 
@@ -228,7 +228,14 @@ class Client
         socket.emit('ready');
 
         this.layout();
-        window.onresize = () => { client.layout(); }
+        window.onresize = () =>
+        {
+            client.layout();
+            this.app.resize(window.innerWidth, window.innerHeight);
+            this.app.view.style.width = window.innerWidth;
+            this.app.view.style.height = window.innerHeight;
+            this.app.renderer.resize(window.innerWidth, window.innerHeight);
+        }
     }
 
     onReveal(cardId, deckId)
