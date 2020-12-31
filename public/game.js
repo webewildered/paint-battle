@@ -22,6 +22,7 @@ class Game
     {
         alert('hi!');
     }
+
     constructor(listener, numPlayers, shuffle)
     {
         // Constants
@@ -108,7 +109,7 @@ class Game
     begin()
     {
         // Put some starting spots on the board
-        let numPlayers = 2;
+        let numPlayers = this.players.length;
         let center = Math.floor(this.size / 2); // Gameboard middle pixel index
         for (let i = 0; i < numPlayers; i++)
         {

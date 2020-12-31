@@ -6,7 +6,10 @@ const scale = 2; // Screen pixels per board pixel
 const colors = [ // Player colors
     [0x3d, 0x1d, 0xef, 0xff], // player 0 rgba
     [0xed, 0x07, 0x30, 0xff], // player 1 rgba
-    [0x00, 0xff, 0x00, 0xff], // ...
+    [0x23, 0xd1, 0x00, 0xff], // etc
+    [0xff, 0xd8, 0x00, 0xff],
+    [0x90, 0x28, 0xcc, 0xff],
+    [0xff, 0x7c, 0x3a, 0xff],
     [0xff, 0xff, 0xff, 0xff]  // blank
 ];
 const maxPlayers = 2;
@@ -98,7 +101,7 @@ class Client
     {
         // Create the game
         let numPlayers = playerNames.length;
-        const shuffle = false;
+        const shuffle = isLocalGame();
         game = new Game(this, numPlayers, shuffle);
 
         // Create the app
@@ -187,37 +190,42 @@ class Client
             let x = 10;
             let y = i ? 0 : (playerHeight + boardSize);
             let name = playerNames[i];
-            let local = (i == localPlayerId);
+            let local = (isLocalGame() || i == localPlayerId);
             this.players[i] = new CPlayer(i, name, local);
         }
 
-        // Forward server actions to the game
-        socket.on('play', (action) =>
+        if (!isLocalGame())
         {
-            // Read any reveals attached to the action
-            for (let reveal of action.reveals)
+            // Forward server actions to the game
+            socket.on('play', (action) =>
             {
-                this.onReveal(reveal.cardId, reveal.deckId);
-            }
-            
-            // Play the action
-            game.play(action);
-        });
+                // Read any reveals attached to the action
+                for (let reveal of action.reveals)
+                {
+                    this.onReveal(reveal.cardId, reveal.deckId);
+                }
+                
+                // Play the action
+                game.play(action);
+            });
 
-        // Listen for server reveals
-        socket.on('reveal', (cardId, deckId) =>
-        {
-            this.onReveal(cardId, deckId);
-        });
+            // Listen for server reveals
+            socket.on('reveal', (cardId, deckId) =>
+            {
+                this.onReveal(cardId, deckId);
+            });
 
-        // Listen for player disconnects
-        socket.on('removePlayer', (playerId) =>
-        {
-            game.removePlayer(playerId);
-        });
+            // Listen for player disconnects
+            socket.on('removePlayer', (playerId) =>
+            {
+                game.removePlayer(playerId);
+            });
+        }
 
         // Begin the game
         game.begin();
+
+        socket.emit('ready');
 
         this.layout();
         window.onresize = () => { client.layout(); }
@@ -419,7 +427,10 @@ class Client
     {
         // Tell both the local and remove game about the action
         game.play(action);
-        socket.emit('play', action);
+        if (!isLocalGame())
+        {
+            socket.emit('play', action);
+        }
     }
 
     setCursor(card)
@@ -765,9 +776,18 @@ var key;
 var localPlayerId;
 var lobbyPlayers;
 
+function isLocalGame()
+{
+    return (localPlayerId == -1);
+}
+
 function addLobbyPlayer(name)
 {
     let li = $('<li>').text(name);
+    if (lobbyPlayers.length == 0)
+    {
+        li.append(' (host)');
+    }
     $('#playerList').append(li);
     lobbyPlayers.push({name: name, li: li});
 }
@@ -775,6 +795,11 @@ function addLobbyPlayer(name)
 function removeLobbyPlayer(id)
 {
     lobbyPlayers[id].li.remove();
+    lobbyPlayers.splice(id, 1);
+    if (id == 0)
+    {
+        lobbyPlayers[0].li.append(' (host)');
+    }
     if (localPlayerId > id)
     {
         localPlayerId--;
@@ -795,9 +820,23 @@ function becomeHost()
     });
 }
 
+function startGame()
+{
+    $('#lobby').hide();
+    $('#playerList').empty();
+
+    let playerNames = [];
+    lobbyPlayers.forEach(player => playerNames.push(player.name));
+    client = new Client();
+    client.begin(playerNames);
+}
+
 function main()
 {
     socket = io();
+    
+    let joinForm = $('#joinForm');
+    let localForm = $('#localForm');
 
     let key = document.location.search.slice(1);
     if (key.length == 6)
@@ -807,14 +846,31 @@ function main()
     }
     else
     {
+        // Testing option - quick start a local game
+        localForm.show();
+        localForm.submit(function()
+        {
+            socket.close();
+            joinForm.hide();
+            localForm.hide();
+            let numPlayers = $('#localPlayersInput').val();
+            localPlayerId = -1;
+            lobbyPlayers = [];
+            for (let i = 0; i < numPlayers; i++)
+            {
+                addLobbyPlayer('Player ' + (i + 1));
+            }
+            startGame();
+            return false;
+        });
         host = true;
     }
     
-    let joinForm = $('#joinForm');
     joinForm.show();
     joinForm.submit(function()
     {
         joinForm.hide();
+        localForm.hide();
         
         let playerName = $('#nameInput').val();
 
@@ -825,7 +881,7 @@ function main()
             key = gameKey;
             localPlayerId = players.length;
             lobbyPlayers = [];
-            let url = 'http://localhost:3000/?' + key;
+            let url = window.location.origin + window.location.pathname + '?' + key;
             $('#gameUrl').html(url).attr('href', url);
             for (let i = 0; i < players.length; i++)
             {
@@ -853,20 +909,15 @@ function main()
         // When the server rejects the join
         socket.on('error', () =>
         {
+            let url = window.location.origin + window.location.pathname;
+            $('#startUrl').attr('href', url);
             $('#error').show();
         });
 
         // When the game begins
-        socket.on('start', () =>
-        {
-            $('#lobby').hide();
-            $('#playerList').empty();
-
-            let playerNames = [];
-            lobbyPlayers.forEach(player => playerNames.push(player.name));
-            client = new Client();
-            client.begin(playerNames);
-        });
+        // TODO - need to forbid inputs until ready.  can't send any game messages to the server until it tells us it's ready.
+        socket.on('start', startGame);
+        //socket.on('ready', beginGame);
 
         // Send first message to the server
         socket.emit('join', playerName, key);
