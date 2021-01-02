@@ -1,16 +1,15 @@
-// requires draw.js
-// requires game.js
+// requires draw.js, game.js, lobby.js all dumped into the global scope
 
 // Constants
 const scale = 2; // Screen pixels per board pixel
 const colors = [ // Player colors
-    [0x3d, 0x1d, 0xef, 0xff], // player 0 rgba
-    [0xed, 0x07, 0x30, 0xff], // player 1 rgba
-    [0x23, 0xd1, 0x00, 0xff], // etc
-    [0xff, 0xd8, 0x00, 0xff],
-    [0x90, 0x28, 0xcc, 0xff],
-    [0xff, 0x7c, 0x3a, 0xff],
-    [0xff, 0xff, 0xff, 0xff]  // blank
+    0x3d1defff, // player 0 rgba
+    0xed0730ff, // player 1 rgba
+    0x23d100ff, // etc
+    0xffd800ff,
+    0x9028ccff,
+    0xff7c3aff,
+    0xffffffff  // blank
 ];
 const maxPlayers = 2;
 
@@ -39,7 +38,7 @@ function rtt(board, scale, palette)
 }
 
 // Returns a Board representing what the card will allow the player to draw
-function drawCard(card, on, off, minSize = 0)
+function renderCard(card, on, off, minSize = 0)
 {
     // Determine the dimensions required
     let w = 0;
@@ -97,11 +96,14 @@ function drawCard(card, on, off, minSize = 0)
 
 class Client
 {
-    begin(playerNames)
+    begin(socket, playerNames, localPlayerId)
     {
+        this.socket = socket;
+        this.localPlayerId = localPlayerId;
+
         // Create the game
         let numPlayers = playerNames.length;
-        const shuffle = isLocalGame();
+        const shuffle = this.isLocalGame();
         game = new Game(this, numPlayers, shuffle);
 
         // Create the app
@@ -114,16 +116,20 @@ class Client
         this.app.stage.on('mousemove', this.mouseMove, this);
         this.app.ticker.add(this.update, this);
 
-        // Create the color palettes
+        // Create the color palettes        
+        function rgba(color)
+        {
+            return [color >> 24, (color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
+        }
         this.palette = new Array(numPlayers + 1);
         this.previewPalette = new Array(this.palette.length);
         for (let i = 0; i < numPlayers; i++)
         {
-            this.palette[i] = colors[i];
-            this.previewPalette[i] = [0xcc, 0xcc, 0xcc, 0xcc];
+            this.palette[i] = rgba(colors[i]);
+            this.previewPalette[i] = rgba(0xcccccccc);
         }
-        this.palette[numPlayers] = colors[colors.length - 1];
-        this.previewPalette[numPlayers] = [0, 0, 0, 0];
+        this.palette[numPlayers] = rgba(colors[colors.length - 1]);
+        this.previewPalette[numPlayers] = rgba(0);
 
         //
         // Board display
@@ -136,6 +142,8 @@ class Client
         // Game board display
         let boardSize = game.size * 2;
         this.buffer = new Uint8Array(boardSize * boardSize * 4);
+        this.boardGraphics = new PIXI.Graphics();
+        this.boardContainer.addChild(this.boardGraphics);
         this.boardSprite = new PIXI.Sprite();
         this.boardSprite.interactive = true;
         this.boardContainer.addChild(this.boardSprite);
@@ -183,6 +191,9 @@ class Client
         this.pileCard = new CCard(-1);
         this.pile.addChild(this.pileCard.graphics);
 
+        this.pileText = new PIXI.Text(game.deck.length + '', {fontFamily : 'Arial', fontSize: 24, fill : colors[this.id]});
+        this.pile.addChild(this.pileText);
+
         // Create players
         this.players = new Array(numPlayers);
         for (let i = 0; i < numPlayers; i++)
@@ -190,11 +201,11 @@ class Client
             let x = 10;
             let y = i ? 0 : (playerHeight + boardSize);
             let name = playerNames[i];
-            let local = (isLocalGame() || i == localPlayerId);
+            let local = (this.isLocalGame() || i == localPlayerId);
             this.players[i] = new CPlayer(i, name, local);
         }
 
-        if (!isLocalGame())
+        if (!this.isLocalGame())
         {
             // Forward server actions to the game
             socket.on('play', (action) =>
@@ -229,6 +240,11 @@ class Client
 
         this.onResize(); // pixi scales incorrectly when res != 1, resize now to fix it
         window.onresize = () => this.onResize();
+    }
+    
+    isLocalGame()
+    {
+        return (this.localPlayerId == -1);
     }
 
     onResize()
@@ -282,15 +298,11 @@ class Client
         }
 
         let point = this.mouseMoves[this.mouseMoves.length - 1];
+        this.lastPoint = point;
 
         if (this.cursor != null)
         {
-            this.cursor.x = scale * (point.x - Math.floor(this.cursor.width / (2 * scale)));
-            this.cursor.y = scale * (point.y - Math.floor(this.cursor.height / (2 * scale)));
-            
-            let onBoard = (point.x >= 0 && point.x < game.size && point.y >= 0 && point.y < game.size);
-            this.cursor.visible = onBoard;
-            this.setCursorStyle(onBoard ? "none" : "");
+            this.updateCursor();
         }
 
         if (this.preview)
@@ -438,9 +450,9 @@ class Client
     {
         // Tell both the local and remove game about the action
         game.play(action);
-        if (!isLocalGame())
+        if (!this.isLocalGame())
         {
-            socket.emit('play', action);
+            this.socket.emit('play', action);
         }
     }
 
@@ -451,7 +463,7 @@ class Client
         // Draw the card's shape to a board.  (This will return an empty board if there is no shape).
         const crossRadius = 3;
         const crossSize = 2 * crossRadius + 1;
-        let shapeBoard = drawCard(card, 0, this.previewPalette.length - 1, crossSize);
+        let shapeBoard = renderCard(card, 0, this.previewPalette.length - 1, crossSize);
 
         // Take the outline of the shape, and then add a crosshair to it.
         let cursorBoard = new Board(shapeBoard.width, shapeBoard.height);
@@ -460,6 +472,22 @@ class Client
 
         this.cursor = new PIXI.Sprite(rtt(cursorBoard, scale, this.previewPalette));
         this.boardSprite.addChild(this.cursor);
+
+        this.updateCursor();
+
+        this.boardGraphics.lineStyle(2, 0xee0000, 1);
+        this.boardGraphics.drawRect(-1, -1, this.boardSprite.width + 2, this.boardSprite.height + 2);
+    }
+
+    updateCursor()
+    {
+        let point = this.lastPoint;
+        this.cursor.x = scale * (point.x - Math.floor(this.cursor.width / (2 * scale)));
+        this.cursor.y = scale * (point.y - Math.floor(this.cursor.height / (2 * scale)));
+        
+        let onBoard = (point.x >= 0 && point.x < game.size && point.y >= 0 && point.y < game.size);
+        this.cursor.visible = onBoard;
+        this.setCursorStyle(onBoard ? "none" : "");
     }
 
     clearCursor()
@@ -470,6 +498,8 @@ class Client
             this.cursor.destroy();
             this.cursor = null;
             this.setCursorStyle("");
+
+            this.boardGraphics.clear();
         }
     }
 
@@ -477,6 +507,7 @@ class Client
     {
         this.preview = true;
         this.overlayBoard.clear(this.players.length);
+        this.updateOverlayBoard();
         this.overlaySprite.visible = true;
     }
 
@@ -521,6 +552,10 @@ class Client
     deal(playerId, cardId)
     {
         this.players[playerId].addCard(cardId, this.pile.x, this.pile.y);
+        
+        this.pileText.text = game.deck.length + '';
+        this.pileText.x = this.pileCard.graphics.width - this.pileText.width - 10;
+        this.pileText.y = 10;
     }
 
     discard(playerId, cardId)
@@ -541,7 +576,7 @@ class Client
         let resource = new PIXI.resources.BufferResource(this.buffer, options);
         this.boardSprite.texture = PIXI.Texture.from(resource);
 
-        let count = game.board.count();
+        let count = game.board.count(this.players.length + 1);
         for (let i = 0; i < this.players.length; i++)
         {
             this.players[i].setCount(count[i]);
@@ -567,7 +602,7 @@ class CPlayer
         this.container = new PIXI.Container();
         this.local = local;
 
-        this.name = new PIXI.Text(name, {fontFamily : 'Arial', fontSize: 24, fill : 0x333333, align : 'left'});
+        this.name = new PIXI.Text(name, {fontFamily : 'Arial', fontSize: 24, fill : colors[this.id], align : 'left'});
         this.container.addChild(this.name);
 
         this.count = new PIXI.Text('0px', {fontFamily : 'Arial', fontSize: 18, fill : 0x333333, align : 'left'});
@@ -646,13 +681,23 @@ class CCard
         this.graphics = new PIXI.Graphics();
         this.targetX = 0;
         this.targetY = 0;
-        this.updateGraphics();
+        this.updateGraphics(false);
         this.graphics.on('mouseup', () =>
         {
             if (this.callback)
             {
                 this.callback(this.id);
             }
+        });
+        
+        this.graphics.on('mouseover', () =>
+        {
+            this.updateGraphics(true);
+        });
+        
+        this.graphics.on('mouseout', () =>
+        {
+            this.updateGraphics(false);
         });
 
         let card = game.getCard(this.id);
@@ -699,10 +744,10 @@ class CCard
     {
         this.graphics.interactive = active;
         this.callback = callback;
-        this.updateGraphics();
+        this.updateGraphics(false);
     }
 
-    updateGraphics()
+    updateGraphics(over)
     {
         this.graphics.removeChildren();
         if (this.texture != null)
@@ -714,7 +759,7 @@ class CCard
         
         // Add the card background
         this.graphics.clear();
-        this.graphics.lineStyle(2, this.graphics.interactive ? 0x5577aa : 0x333333, 1);
+        this.graphics.lineStyle(2, this.graphics.interactive ? (over ? 0xee0000 : 0x0000ee) : 0x333333, 1);
         this.graphics.beginFill(card == null ? 0xaaaaaa : 0xffffff);
         this.graphics.drawRoundedRect(0, 0, cardWidth, cardHeight, 10);
         this.graphics.endFill();
@@ -737,8 +782,8 @@ class CCard
                 case CardType.BOX:
                 case CardType.POLY:
                 case CardType.ERASER:
-                    let board = drawCard(card, 0, 1, 0);
-                    pixels = board.count()[0];
+                    let board = renderCard(card, 0, 1, 0);
+                    pixels = board.count(1)[0];
                     this.texture = rtt(board, 1, cardPalette);
                     let sprite = new PIXI.Sprite(this.texture);
                     sprite.x = Math.floor(this.graphics.width - sprite.width) / 2;
@@ -780,162 +825,3 @@ class CCard
         this.targetY = y;
     }
 }
-
-var host;
-var socket;
-var key;
-var localPlayerId;
-var lobbyPlayers;
-
-function isLocalGame()
-{
-    return (localPlayerId == -1);
-}
-
-function addLobbyPlayer(name)
-{
-    let li = $('<li>').text(name);
-    if (lobbyPlayers.length == 0)
-    {
-        li.append(' (host)');
-    }
-    $('#playerList').append(li);
-    lobbyPlayers.push({name: name, li: li});
-}
-
-function removeLobbyPlayer(id)
-{
-    lobbyPlayers[id].li.remove();
-    lobbyPlayers.splice(id, 1);
-    if (id == 0)
-    {
-        lobbyPlayers[0].li.append(' (host)');
-    }
-    if (localPlayerId > id)
-    {
-        localPlayerId--;
-        if (localPlayerId == 0)
-        {
-            becomeHost();
-        }
-    }
-}
-
-function becomeHost()
-{
-    $('#startForm').show();
-    $('#startForm').submit(function()
-    {
-        socket.emit('start');
-        return false; // Don't reload the page
-    });
-}
-
-function startGame()
-{
-    $('#lobby').hide();
-    $('#playerList').empty();
-
-    let playerNames = [];
-    lobbyPlayers.forEach(player => playerNames.push(player.name));
-    client = new Client();
-    client.begin(playerNames);
-}
-
-function main()
-{
-    socket = io();
-    
-    let joinForm = $('#joinForm');
-    let localForm = $('#localForm');
-
-    let key = document.location.search.slice(1);
-    if (key.length == 6)
-    {
-        host = false;
-        $('#joinButton').text("Join game");
-    }
-    else
-    {
-        // Testing option - quick start a local game
-        localForm.show();
-        localForm.submit(function()
-        {
-            socket.close();
-            joinForm.hide();
-            localForm.hide();
-            let numPlayers = $('#localPlayersInput').val();
-            localPlayerId = -1;
-            lobbyPlayers = [];
-            for (let i = 0; i < numPlayers; i++)
-            {
-                addLobbyPlayer('Player ' + (i + 1));
-            }
-            startGame();
-            return false;
-        });
-        host = true;
-    }
-    
-    joinForm.show();
-    joinForm.submit(function()
-    {
-        joinForm.hide();
-        localForm.hide();
-        
-        let playerName = $('#nameInput').val();
-
-        // When I enter the lobby
-        socket.on('join', (gameKey, players) =>
-        {
-            $('#lobby').show();
-            key = gameKey;
-            localPlayerId = players.length;
-            lobbyPlayers = [];
-            let url = window.location.origin + window.location.pathname + '?' + key;
-            $('#gameUrl').html(url).attr('href', url);
-            for (let i = 0; i < players.length; i++)
-            {
-                addLobbyPlayer(players[i]);
-            }
-            addLobbyPlayer(playerName);
-            if (players.length == 0)
-            {
-                becomeHost();
-            }
-        });
-
-        // When another player enters the lobby
-        socket.on('addPlayer', (name) =>
-        {
-            addLobbyPlayer(name);
-        });
-
-        // When another player leaves the lobby
-        socket.on('removePlayer', (id) =>
-        {
-            removeLobbyPlayer(id);
-        });
-
-        // When the server rejects the join
-        socket.on('error', () =>
-        {
-            let url = window.location.origin + window.location.pathname;
-            $('#startUrl').attr('href', url);
-            $('#error').show();
-        });
-
-        // When the game begins
-        // TODO - need to forbid inputs until ready.  can't send any game messages to the server until it tells us it's ready.
-        socket.on('start', startGame);
-        //socket.on('ready', beginGame);
-
-        // Send first message to the server
-        socket.emit('join', playerName, key);
-
-        // Don't reload the page
-        return false;
-    });
-}
-
-window.main = main;

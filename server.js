@@ -5,12 +5,11 @@ module.exports = function(http)
     var io = require('socket.io')(http);
     var rooms = new Map();
 
-    var debugId = 0;
-
     class Room
     {
-        constructor()
+        constructor(key)
         {
+            this.key = key;
             this.players = [];
             this.reveals = [];
             this.started = false;
@@ -46,6 +45,7 @@ module.exports = function(http)
         {
             // Tell the player their card
             this.players[playerId].socket.emit('reveal', cardId, this.game.shuffle[cardId]);
+            console.log(this.key + ':' + playerId + ' reveal ' + cardId);
         }
 
         discard(cardId) {}
@@ -61,6 +61,8 @@ module.exports = function(http)
             let player = this.players[playerId];
             player.socket.on('play', (action) =>
             {
+                console.log(this.key + ':' + playerId + ' play');
+
                 // Stop listening
                 player.socket.removeAllListeners('play');
 
@@ -90,9 +92,6 @@ module.exports = function(http)
     io.on('connection', (socket) => 
     {
         let room = null;
-
-        socket.debugId = (debugId++);
-        console.log(socket.debugId + ' connected');
         
         // When a player joins or creates a room
         socket.on('join', (name, key) =>
@@ -119,7 +118,7 @@ module.exports = function(http)
                 }
 
                 // Create the room
-                room = new Room();
+                room = new Room(key);
                 rooms[key] = room;
             }
             else if (key.length == 6)
@@ -150,8 +149,6 @@ module.exports = function(http)
             // Notify the other players in case of disconnect
             socket.on('disconnect', () =>
             {
-                console.log(socket.debugId + ' disconnected');
-
                 // Find the player
                 let playerId = room.getPlayerId(socket);
                 if (playerId < 0)
@@ -159,6 +156,8 @@ module.exports = function(http)
                     console.log('disconnecting player not found in room');
                     return;
                 }
+                
+                console.log(key + ':' + playerId + ' disconnect');
 
                 // Remove the player from the room
                 if (room.started)
@@ -185,6 +184,7 @@ module.exports = function(http)
                 if (playerId == 0)
                 {
                     room.broadcast(player => player.socket.emit('start'));
+                    console.log(key + ':' + playerId + ' start');
                 }
                 else
                 {
@@ -210,6 +210,7 @@ module.exports = function(http)
 
             socket.on('ready', () =>
             {
+                console.log(key + ':' + room.getPlayerId(socket) + ' ready');
                 room.ready++;
                 if (room.ready == room.players.length)
                 {

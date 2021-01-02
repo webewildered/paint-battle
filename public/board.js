@@ -420,21 +420,21 @@ class Board
     //
 
     // Returns an array where the ith element has the number of pixels with value = i
-    count()
+    count(numValues)
     {
-        let a = [];
+        let a = Array(numValues).fill(0);
         this.allf((i) =>
-        {
-            let value = a[this.data[i]];
-            if (value == null)
+        { 
+            let valueCount = a[this.data[i]];
+            if (valueCount == null)
             {
-                value = 1;
+                valueCount = 1;
             }
             else
             {
-                value++;
+                valueCount++;
             }
-            a[this.data[i]] = value;
+            a[this.data[i]] = valueCount;
         });
         return a;
     }

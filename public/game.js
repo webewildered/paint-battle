@@ -35,14 +35,29 @@ class Game
         this.board = new Board(this.size, this.size);
         this.board.clear(numPlayers);
 
+        if (!(numPlayers >= 2 && numPlayers <= 6))
+        {
+            throw 'Unsupported player count ' + numPlayers;
+        }
+
         // Make a deck of cards
-        this.deck =
+        this.deck = [];
+        const countLow = [3, 4, 5, 6, 7][numPlayers];
+        const countMed = [5, 5, 6, 7, 8][numPlayers];
+        const countHigh = [7, 7, 8, 8, 9][numPlayers];
+
+        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.ERASER, radius: 30.5, name: 'Eraser' }));
+        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.BOX, width: 45, height: 21, name: 'Box' }));
+        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.BOX, width: 21, height: 45, name: 'Box' }));
+        this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.LINE, pixels: 140, name: 'Line' }));
+        this.deck = this.deck.concat(Array(countMed).fill({ type: CardType.FILL, radius: 4, name: 'Grow' }));
+        this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.PAINT, radius: 4, pixels: 600, name: 'Brush' }));
+        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 3, radius: 25.5, angle: 0.2, name: 'Polygon' }));
+        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 5, radius: 23.5, angle: 0.4, name: 'Polygon' }));
+        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 7, radius: 21.5, angle: 0.6, name: 'Polygon' }));
+
+        /*
         [
-            /*
-            { type: CardType.CIRCLE, radius: 20.5 },
-            { type: CardType.CIRCLE, radius: 30.5 },
-            { type: CardType.CIRCLE, radius: 25.5 },
-            */
             { type: CardType.ERASER, radius: 20.5 },
             { type: CardType.ERASER, radius: 30.5 },
             { type: CardType.ERASER, radius: 25.5 },
@@ -62,6 +77,7 @@ class Game
             { type: CardType.POLY, sides: 5, radius: 30.5, angle: 2.2 },
             { type: CardType.POLY, sides: 6, radius: 25.5, angle: 3.3 },
         ];
+        */
 
         // Shuffle the deck on server (shuffle = true), mark all cards hidden on client (shuffle = false)
         let count = this.deck.length;
