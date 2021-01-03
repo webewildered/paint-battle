@@ -1,4 +1,7 @@
-// requires draw.js, game.js, lobby.js all dumped into the global scope
+const CardType = require('./CardType.js');
+const Game = require('./game.js');
+const Board = require('./board.js');
+const EventEmitter = require('events');
 
 // Constants
 const scale = 2; // Screen pixels per board pixel
@@ -22,13 +25,14 @@ const cardWidth = 100;
 const cardHeight = 150;
 const playerHeight = cardHeight + 20;
 
-// Globals
-var client;
-var game;
-
 //
 // Global helpers
 //
+
+function cardName(card)
+{
+    return (card.name == null ? card.type : card.name);
+}
 
 // Render a board to a PIXI texture
 function rtt(board, scale, palette)
@@ -96,15 +100,62 @@ function renderCard(card, on, off, minSize = 0)
 
 class Client
 {
+    constructor()
+    {
+        console.log('Client()!!!');
+    }
+
     begin(socket, playerNames, localPlayerId)
     {
         this.socket = socket;
         this.localPlayerId = localPlayerId;
 
-        // Create the game
+        //
+        // Create the game and listen for its events
+        //
+
         let numPlayers = playerNames.length;
         const shuffle = this.isLocalGame();
-        game = new Game(this, numPlayers, shuffle);
+        game = new Game(numPlayers, shuffle);
+
+        game.on('updateBoard', () =>
+        {
+            game.board.render(scale, this.palette, this.buffer);
+            let boardSize = scale * game.size;
+            let options = {width: boardSize, height: boardSize};
+            let resource = new PIXI.resources.BufferResource(this.buffer, options);
+            this.boardSprite.texture = PIXI.Texture.from(resource);
+    
+            let count = game.board.count(this.players.length + 1);
+            for (let i = 0; i < this.players.length; i++)
+            {
+                this.players[i].setCount(count[i]);
+            }
+        });
+
+        game.on('deal', (playerId, cardId) =>
+        {
+            this.players[playerId].addCard(cardId, this.pile.x, this.pile.y);
+            this.updatePile();
+        });
+
+        game.on('play', (playerId, cardId) =>
+        {
+            this.players[playerId].play(cardId);
+        });
+
+        game.on('beginTurn', (playerId) =>
+        {
+            if (this.players[playerId].local)
+            {
+                this.status.text = 'Your turn - play a card!'
+                this.players[playerId].setEnabled(true);
+            }
+            else
+            {
+                this.status.text = this.players[playerId].name + '\'s turn';
+            }
+        });
 
         // Create the app
         this.app = new PIXI.Application({
@@ -126,7 +177,7 @@ class Client
         for (let i = 0; i < numPlayers; i++)
         {
             this.palette[i] = rgba(colors[i]);
-            this.previewPalette[i] = rgba(0xcccccccc);
+            this.previewPalette[i] = rgba(0xaaaaaaff);
         }
         this.palette[numPlayers] = rgba(colors[colors.length - 1]);
         this.previewPalette[numPlayers] = rgba(0);
@@ -184,91 +235,78 @@ class Client
 
         // Create the draw pile
         this.pile = new PIXI.Container;
-        this.pile.x = boardSize + 20;
+        this.pile.x = 10;
         this.pile.y = 10;
         this.app.stage.addChild(this.pile);
 
         this.pileCard = new CCard(-1);
         this.pile.addChild(this.pileCard.graphics);
 
-        this.pileText = new PIXI.Text(game.deck.length + '', {fontFamily : 'Arial', fontSize: 24, fill : colors[this.id]});
+        this.pileText = new PIXI.Text('', {fontFamily : 'Arial', fontSize: 24, fill : 0x000000});
         this.pile.addChild(this.pileText);
+        this.updatePile();
+
+        // Create the status bar
+        this.status = new PIXI.Text('', {fontFamily : 'Arial', fontSize: 24, fill : 0x000000});
+        this.app.stage.addChild(this.status);
 
         // Create players
         this.players = new Array(numPlayers);
         for (let i = 0; i < numPlayers; i++)
         {
-            let x = 10;
-            let y = i ? 0 : (playerHeight + boardSize);
             let name = playerNames[i];
             let local = (this.isLocalGame() || i == localPlayerId);
             this.players[i] = new CPlayer(i, name, local);
         }
 
+        // Begin the game
+        game.begin();
+
+        // Listen for events from the server
         if (!this.isLocalGame())
         {
-            // Forward server actions to the game
+            // Card revealed
+            let onReveal = (cardId, deckId) => { game.reveal(cardId, deckId); }
+            socket.on('reveal', onReveal);
+
+            // Another player played a card
             socket.on('play', (action) =>
             {
                 // Read any reveals attached to the action
                 for (let reveal of action.reveals)
                 {
-                    this.onReveal(reveal.cardId, reveal.deckId);
+                    onReveal(reveal.cardId, reveal.deckId);
                 }
                 
                 // Play the action
                 game.play(action);
             });
 
-            // Listen for server reveals
-            socket.on('reveal', (cardId, deckId) =>
-            {
-                this.onReveal(cardId, deckId);
-            });
-
-            // Listen for player disconnects
+            // Another player left the game
             socket.on('removePlayer', (playerId) =>
             {
                 game.removePlayer(playerId);
             });
+            
+            // Notify the server that this client is ready to receive messages
+            socket.emit('ready');
         }
 
-        // Begin the game
-        game.begin();
-
-        socket.emit('ready');
-
-        this.onResize(); // pixi scales incorrectly when res != 1, resize now to fix it
-        window.onresize = () => this.onResize();
+        // Listen for window resizes
+        window.onresize = () =>
+        {
+            let w = window.innerWidth;
+            let h = window.innerHeight;
+            this.app.resize(w, h);
+            this.app.view.style.width = w;
+            this.app.view.style.height = h;
+            this.app.renderer.resize(w, h);
+            client.layout();
+        }
+        window.onresize(); // pixi scales incorrectly when res != 1, resize now to fix it
     }
     
-    isLocalGame()
-    {
-        return (this.localPlayerId == -1);
-    }
-
-    onResize()
-    {
-        let w = window.innerWidth;
-        let h = window.innerHeight;
-        this.app.resize(w, h);
-        this.app.view.style.width = w;
-        this.app.view.style.height = h;
-        this.app.renderer.resize(w, h);
-        client.layout();
-    }
-
-    onReveal(cardId, deckId)
-    {
-        game.shuffle[cardId] = deckId;
-
-        let cCard = hiddenCards[cardId];
-        if (cCard != null)
-        {
-            cCard.updateGraphics();
-            hiddenCards.delete(cardId);
-        }
-    }
+    isLocalGame() { return (this.localPlayerId == -1); }
 
     layout()
     {
@@ -279,8 +317,11 @@ class Client
         for (let i = 0; i < this.players.length; i++)
         {
             this.players[i].container.x = playerX;
-            this.players[i].container.y = this.boardContainer.y + i * 200 + 10;
+            this.players[i].container.y = 10 + i * 200 + 10;
         }
+
+        this.status.x = 10;
+        this.status.y = this.boardContainer.y + this.boardContainer.height + 10;
     }
 
     setCursorStyle(cursorStyle)
@@ -288,6 +329,13 @@ class Client
         document.body.style.cursor = cursorStyle;
         this.app.renderer.plugins.interaction.cursorStyles.default = cursorStyle;
         this.app.renderer.plugins.interaction.cursorStyles.hover = cursorStyle;
+    }
+
+    updatePile()
+    {
+        this.pileText.text = game.pile.length + '';
+        this.pileText.x = this.pileCard.graphics.width - this.pileText.width - 10;
+        this.pileText.y = 10;
     }
 
     update(delta)
@@ -344,6 +392,10 @@ class Client
                             this.endPaint();
                             break;
                         }
+                        else
+                        {
+                            this.status.text = 'Painting (' + this.paintPixels + 'px left)';
+                        }
                     }
                     break;
                 default:
@@ -360,6 +412,9 @@ class Client
         // Create a cursor for the chosen card
         let card = game.getCard(cardId);
         this.setCursor(card);
+        
+        // Update the status
+        this.status.text = 'Playing ' + cardName(card) + ' - click on the board to draw, starting on your own color!';
 
         // Set the card's event listener
         switch (card.type)
@@ -487,6 +542,7 @@ class Client
         
         let onBoard = (point.x >= 0 && point.x < game.size && point.y >= 0 && point.y < game.size);
         this.cursor.visible = onBoard;
+        this.cursor.alpha = (game.startOk(point.x, point.y) ? 1 : 0.5);
         this.setCursorStyle(onBoard ? "none" : "");
     }
 
@@ -537,52 +593,6 @@ class Client
         this.mouseMoves.push({x:Math.floor(point.x / scale), y:Math.floor(point.y / scale)});
     }
 
-    //
-    // Game listener implementation
-    //
-
-    beginTurn(playerId)
-    {
-        if (this.players[playerId].local)
-        {
-            this.players[playerId].chooseCard();
-        }
-    }
-
-    deal(playerId, cardId)
-    {
-        this.players[playerId].addCard(cardId, this.pile.x, this.pile.y);
-        
-        this.pileText.text = game.deck.length + '';
-        this.pileText.x = this.pileCard.graphics.width - this.pileText.width - 10;
-        this.pileText.y = 10;
-    }
-
-    discard(playerId, cardId)
-    {
-        this.players[playerId].removeCard(cardId);
-    }
-
-    reveal(playerId, cardId)
-    {
-        // do nothing, only need to act on remote reveals, which are handled by onReveal()
-    }
-
-    updateBoard()
-    {
-        game.board.render(scale, this.palette, this.buffer);
-        let boardSize = scale * game.size;
-        let options = {width: boardSize, height: boardSize};
-        let resource = new PIXI.resources.BufferResource(this.buffer, options);
-        this.boardSprite.texture = PIXI.Texture.from(resource);
-
-        let count = game.board.count(this.players.length + 1);
-        for (let i = 0; i < this.players.length; i++)
-        {
-            this.players[i].setCount(count[i]);
-        }
-    }
-
     updateOverlayBoard()
     {
         this.overlayBoard.render(scale, this.previewPalette, this.overlayBuffer);
@@ -601,36 +611,50 @@ class CPlayer
         this.cards = [];
         this.container = new PIXI.Container();
         this.local = local;
+        this.name = name;
 
-        this.name = new PIXI.Text(name, {fontFamily : 'Arial', fontSize: 24, fill : colors[this.id], align : 'left'});
-        this.container.addChild(this.name);
+        let nameText = new PIXI.Text(name, {fontFamily : 'Arial', fontSize: 24, fill : colors[this.id], align : 'left'});
+        this.container.addChild(nameText);
 
-        this.count = new PIXI.Text('0px', {fontFamily : 'Arial', fontSize: 18, fill : 0x333333, align : 'left'});
-        this.count.x = this.name.x + this.name.width + 10;
-        this.count.y = this.name.y + this.name.height - this.count.height;
-        this.container.addChild(this.count);
+        this.count = -1;
+        this.delta = 0;
+        this.status = new PIXI.Text('', {fontFamily : 'Arial', fontSize: 18, fill : 0x333333, align : 'left'});
+        this.status.x = nameText.x + nameText.width + 10;
+        this.status.y = nameText.y + nameText.height - this.status.height;
+        this.container.addChild(this.status);
+        this.lastPlayed = null;
 
         client.app.stage.addChild(this.container);
     }
 
-    setCount(count)
+    updateStatus()
     {
-        this.count.text = count + 'px';
+        let statusStr = this.count + 'px';
+
+        if (this.delta != 0)
+        {
+            let sign = (this.delta >= 0) ? '+' : '';
+            statusStr = statusStr + ' (' + sign + this.delta + ')';
+        }
+
+        if (this.lastPlayed != null)
+        {
+            statusStr = statusStr + ' last played: ' + this.lastPlayed;
+        }
+
+        this.status.text = statusStr;
     }
 
-    chooseCard()
+    setCount(count)
     {
-        for (let i = 0; i < this.cards.length; i++)
-        {
-            this.cards[i].setActive(true, (cardId) =>
-            {
-                for (let i = 0; i < this.cards.length; i++)
-                {
-                    this.cards[i].setActive(false);
-                }
-                client.playCard(cardId);
-            });
-        }
+        this.delta = (this.count >= 0) ? (count - this.count) : 0;
+        this.count = count;
+        this.updateStatus();
+    }
+
+    setEnabled(enabled)
+    {
+        this.cards.forEach(card => { card.setEnabled(enabled); });
     }
 
     addCard(cardId, x, y)
@@ -640,26 +664,28 @@ class CPlayer
         card.setPosition(x - this.container.x, y - this.container.y);
         this.cards.push(card);
         this.updateTargets();
+        
+        card.on('click', (cardId) =>
+        {
+            this.setEnabled(false);
+            client.playCard(cardId);
+        });
     }
 
-    removeCard(cardId)
+    play(cardId)
     {
-        // Find the card
-        let cardIndex = 0;
-        for (cardIndex = 0; cardIndex < this.cards.length; cardIndex++)
-        {
-            if (this.cards[cardIndex].id == cardId)
-            {
-                break;
-            }
-        }
-
+        // Find the card and remove it
+        let cardIndex = this.cards.findIndex(card => card.cardId == cardId);
         let card = this.cards[cardIndex];
         this.cards.splice(cardIndex, 1);
         this.container.removeChild(card.graphics);
         card.destroy();
-
         this.updateTargets();
+
+        // Report the last card played in the status
+        let gameCard = game.getCard(cardId);
+        this.lastPlayed = cardName(gameCard);
+        this.updateStatus();
     }
 
     updateTargets()
@@ -672,50 +698,85 @@ class CPlayer
 }
 
 // Map hidden card IDs to their CCards, in order to update the graphics on reveal
-var hiddenCards = new Map();
-class CCard
+class CCard extends EventEmitter
 {
-    constructor(id)
+    constructor(cardId)
     {
-        this.id = id;
+        super();
+
+        this.cardId = cardId;
         this.graphics = new PIXI.Graphics();
+        this.enabled = false;
+        this.mouseOver = false;
         this.targetX = 0;
         this.targetY = 0;
-        this.updateGraphics(false);
+        this.updateGraphics();
+
+        //
+        // Handle mouse events
+        //
+
         this.graphics.on('mouseup', () =>
         {
-            if (this.callback)
+            if (this.enabled)
             {
-                this.callback(this.id);
+                this.emit('click', cardId)
             }
         });
         
         this.graphics.on('mouseover', () =>
         {
-            this.updateGraphics(true);
+            this.mouseOver = true;
+            this.updateGraphics();
         });
         
         this.graphics.on('mouseout', () =>
         {
-            this.updateGraphics(false);
+            this.mouseOver = false;
+            this.updateGraphics();
         });
 
-        let card = game.getCard(this.id);
-        if (card == null)
+        // Handle reveal
+        game.on('reveal', cardId =>
         {
-            hiddenCards[this.id] = this;
-        }
+            if (cardId == this.cardId)
+            {
+                this.updateGraphics();
+            }
+        });
 
+        // Add to ticker for animated position updates
         client.app.ticker.add(this.update, this);
     }
-
+    
+    // Call to destroy graphics resources
     destroy()
     {
-        hiddenCards.delete(this.id);
         client.app.ticker.remove(this.update, this);
         this.graphics.destroy();
     }
 
+    // Hepler getters
+    getCard() { return game.getCard(this.cardId); }
+    isHidden() { return getCard() == null; }
+
+    // Set the position immediately
+    setPosition(x, y)
+    {
+        this.graphics.x = x;
+        this.graphics.y = y;
+        this.targetX = x;
+        this.targetY = y;
+    }
+
+    // Set the position to animate to
+    setTarget(x, y)
+    {
+        this.targetX = x;
+        this.targetY = y;
+    }
+
+    // Animates position
     update(delta)
     {
         let dx = this.graphics.x - this.targetX;
@@ -740,10 +801,14 @@ class CCard
         this.graphics.y = this.targetY + dy;
     }
 
-    setActive(active, callback = null)
+    setEnabled(enabled)
     {
-        this.graphics.interactive = active;
-        this.callback = callback;
+        this.enabled = enabled;
+        this.graphics.interactive = enabled;
+        if (!enabled)
+        {
+            this.mouseOver = false;
+        }
         this.updateGraphics(false);
     }
 
@@ -755,7 +820,7 @@ class CCard
             this.texture.destroy();
         }
         
-        let card = game.getCard(this.id);
+        let card = this.getCard();
         
         // Add the card background
         this.graphics.clear();
@@ -797,8 +862,7 @@ class CCard
                     break;
             }
 
-            let cardName = (card.name == null) ? card.type : card.name;
-            let text = new PIXI.Text(cardName, {fontFamily : 'Arial', fontSize: 24, fill : 0x222222, align : 'left'});
+            let text = new PIXI.Text(cardName(card), {fontFamily : 'Arial', fontSize: 24, fill : 0x222222, align : 'left'});
             text.x = Math.floor((cardWidth - text.width) / 2);
             text.y = Math.floor(10);
             this.graphics.addChild(text);
@@ -810,18 +874,6 @@ class CCard
             this.graphics.addChild(pxText);
         }
     }
-
-    setPosition(x, y)
-    {
-        this.graphics.x = x;
-        this.graphics.y = y;
-        this.targetX = x;
-        this.targetY = y;
-    }
-
-    setTarget(x, y)
-    {
-        this.targetX = x;
-        this.targetY = y;
-    }
 }
+
+module.exports = Client;

@@ -1,50 +1,38 @@
-// In the browser board.js needs to be dumped into the global scope before this.
-// In node, Board is included by require()
-if (typeof module !== 'undefined')
-{
-    eval("var Board = require('./board.js')()");
-}
+const CardType = require('./CardType.js');
+const Board = require('./board.js');
+const EventEmitter = require('events');
 
-const CardType =
+//
+// Events
+// updateBoard(): this.board has changed
+// reveal(cardId, deckId): cardId has been revealed to all players, deckId is its index in this.deck
+// deal(playerId, cardId): cardId has been dealt to playerId
+// play(playerId, cardId): playerId has played and discarded cardId
+// beginTurn(playerId): playerId's turn has begun
+//
+class Game extends EventEmitter
 {
-    CIRCLE: 'circle',
-    BOX: 'box',
-    POLY: 'poly',
-    LINE: 'line',
-    PAINT: 'paint',
-    FILL: 'fill',
-    ERASER: 'eraser'
-}
-
-class Game
-{
-    static test()
+    constructor(numPlayers, shuffle)
     {
-        alert('hi!');
-    }
+        super();
 
-    constructor(listener, numPlayers, shuffle)
-    {
         // Constants
         this.size = 299; // Gameboard dimension
-
-        // Save the listener
-        this.listener = listener;
 
         // Initialize the game board
         this.board = new Board(this.size, this.size);
         this.board.clear(numPlayers);
 
-        if (!(numPlayers >= 2 && numPlayers <= 6))
+        if (!(numPlayers >= 1 && numPlayers <= 6))
         {
             throw 'Unsupported player count ' + numPlayers;
         }
 
         // Make a deck of cards
         this.deck = [];
-        const countLow = [3, 4, 5, 6, 7][numPlayers];
-        const countMed = [5, 5, 6, 7, 8][numPlayers];
-        const countHigh = [7, 7, 8, 8, 9][numPlayers];
+        const countLow = [0, 3, 3, 4, 5, 6, 7][numPlayers];
+        const countMed = [0, 5, 5, 5, 6, 7, 8][numPlayers];
+        const countHigh = [0, 7, 7, 7, 8, 8, 9][numPlayers];
 
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.ERASER, radius: 30.5, name: 'Eraser' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.BOX, width: 45, height: 21, name: 'Box' }));
@@ -55,29 +43,6 @@ class Game
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 3, radius: 25.5, angle: 0.2, name: 'Polygon' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 5, radius: 23.5, angle: 0.4, name: 'Polygon' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 7, radius: 21.5, angle: 0.6, name: 'Polygon' }));
-
-        /*
-        [
-            { type: CardType.ERASER, radius: 20.5 },
-            { type: CardType.ERASER, radius: 30.5 },
-            { type: CardType.ERASER, radius: 25.5 },
-            { type: CardType.BOX, width: 27, height: 27 },
-            { type: CardType.BOX, width: 11, height: 51 },
-            { type: CardType.BOX, width: 45, height: 15 },
-            { type: CardType.LINE, pixels: 120 },
-            { type: CardType.LINE, pixels: 140 },
-            { type: CardType.LINE, pixels: 160 },
-            { type: CardType.FILL, radius: 3 },
-            { type: CardType.FILL, radius: 4 },
-            { type: CardType.FILL, radius: 5 },
-            { type: CardType.PAINT, radius: 3, pixels: 360 },
-            { type: CardType.PAINT, radius: 4, pixels: 480 },
-            { type: CardType.PAINT, radius: 5, pixels: 420 },
-            { type: CardType.POLY, sides: 3, radius: 20.5, angle: 1.1 },
-            { type: CardType.POLY, sides: 5, radius: 30.5, angle: 2.2 },
-            { type: CardType.POLY, sides: 6, radius: 25.5, angle: 3.3 },
-        ];
-        */
 
         // Shuffle the deck on server (shuffle = true), mark all cards hidden on client (shuffle = false)
         let count = this.deck.length;
@@ -98,6 +63,7 @@ class Game
         }
 
         // Initialize the draw pile
+        count -= count % numPlayers; // Equal number of cards for each player
         this.pile = new Array(count);
         for (let i = 0; i < count; i++)
         {
@@ -133,7 +99,8 @@ class Game
             let y = Math.floor(center + Math.sin(i * Math.PI * 2 / numPlayers) * this.size / 3);
             this.board.circle(x, y, 8.5, i);
         }
-        this.listener.updateBoard();
+
+        this.emit('updateBoard');
 
         // Deal cards to each player
         for (let i = 0; i < this.players.length; i++)
@@ -146,6 +113,12 @@ class Game
         // Start the first player's turn
         this.currentPlayer = -1;
         this.nextTurn();
+    }
+
+    reveal(cardId, deckId)
+    {
+        this.shuffle[cardId] = deckId;
+        this.emit('reveal', cardId);
     }
 
     // returns true on success, false on failure
@@ -175,7 +148,6 @@ class Game
                 }
                 let color = (card.type == CardType.CIRCLE) ? this.currentPlayer : this.players.length;
                 this.board.circle(action.x, action.y, card.radius, color);
-                this.listener.updateBoard();
                 break;
             case CardType.BOX:
                 if (!this.startOk(action.x, action.y))
@@ -183,7 +155,6 @@ class Game
                     throw 'Game.play() failed';
                 }
                 this.board.box(action.x, action.y, card.width, card.height, this.currentPlayer);
-                this.listener.updateBoard();
                 break;
             case CardType.POLY:
                 if (!this.startOk(action.x, action.y))
@@ -191,7 +162,6 @@ class Game
                     throw 'Game.play() failed';
                 }
                 this.board.poly(action.x, action.y, card.sides, card.radius, card.angle, this.currentPlayer);
-                this.listener.updateBoard();
                 break;
             case CardType.LINE:
                 if (!this.startOk(action.x, action.y) || action.x2 == null || action.y2 == null)
@@ -199,7 +169,6 @@ class Game
                     throw 'Game.play() failed';
                 }
                 this.board.line(action.x, action.y, action.x2, action.y2, card.pixels, this.currentPlayer);
-                this.listener.updateBoard();
                 break;
             case CardType.PAINT:
                 if (action.points == null || action.points.length == 0 || action.points.length > card.pixels || !this.startOk(action.points[0].x, action.points[0].y))
@@ -229,7 +198,6 @@ class Game
                     p = Math.min(p2, p - 1);
                 }
                 this.board.add(paintBoard, this.currentPlayer);
-                this.listener.updateBoard();
                 break;
             case CardType.FILL:
                 if (!this.startOk(action.x, action.y))
@@ -237,15 +205,18 @@ class Game
                     throw 'Game.play() failed';
                 }
                 this.board.flood(action.x, action.y, card.radius, this.currentPlayer);
-                this.listener.updateBoard();
                 break;
             default:
                 throw 'Game.play() failed';
         }
 
-        this.listener.reveal(action.cardId, this.shuffle[action.cardId]);
-
-        this.discard(this.currentPlayer, action.cardId);
+        this.emit('updateBoard');
+        this.emit('reveal', action.cardId);
+        
+        // Remove the card from the player's hand
+        let player = this.players[this.currentPlayer];
+        player.hand.splice(player.hand.indexOf(action.cardId), 1);
+        this.emit('play', this.currentPlayer, action.cardId);
 
         this.nextTurn();
     }
@@ -273,16 +244,9 @@ class Game
         if (this.pile.length)
         {
             let cardId = this.pile.pop();
-            this.listener.deal(playerId, cardId);
+            this.emit('deal', playerId, cardId);
             this.players[playerId].hand.push(cardId);
         }
-    }
-
-    discard(playerId, cardId)
-    {
-        let player = this.players[this.currentPlayer];
-        player.hand.splice(player.hand.indexOf(cardId), 1);
-        this.listener.discard(playerId, cardId);
     }
 
     nextTurn()
@@ -293,7 +257,7 @@ class Game
             if (!this.players[this.currentPlayer].disconnected) // just skip DC'd players
             {
                 this.deal(this.currentPlayer);
-                this.listener.beginTurn(this.currentPlayer);
+                this.emit('beginTurn', this.currentPlayer);
                 break;
             }
         }
@@ -306,13 +270,8 @@ class Game
 
     startOk(x, y)
     {
-        return (this.board.get(x, y) == this.currentPlayer);
+        return (this.board.get(x, y) == this.currentPlayer || this.board.count(this.players.length + 1)[this.currentPlayer] == 0);
     }
 }
 
-// In the browser this script needs to be dumped into the global scope.
-// In node it's included by Game = require().
-if (typeof module !== 'undefined')
-{
-    module.exports = function() { return Game; }
-}
+module.exports = Game;

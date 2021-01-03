@@ -1,9 +1,4 @@
-// In the browser priority-queue.js needs to be dumped into the global scope before this.
-// In node, it is included by require()
-if (typeof module !== 'undefined')
-{
-    eval("var PriorityQueue = require('./priority-queue.js');");
-}
+var PriorityQueue = require('./priority-queue.js');
 
 class Board
 {
@@ -485,9 +480,4 @@ class Board
     }
 }
 
-// In the browser this script needs to be dumped into the global scope.
-// In node it's included by Board = require().
-if (typeof module !== 'undefined')
-{
-    module.exports = function() { return Board; }
-}
+module.exports = Board;

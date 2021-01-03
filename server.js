@@ -1,7 +1,7 @@
 module.exports = function(http)
 {
-    var Board = require('./public/board.js')();
-    var Game = require('./public/game.js')();
+    var Board = require('./public/board.js');
+    var Game = require('./public/game.js');
     var io = require('socket.io')(http);
     var rooms = new Map();
 
@@ -11,9 +11,9 @@ module.exports = function(http)
         {
             this.key = key;
             this.players = [];
-            this.reveals = [];
             this.started = false;
             this.ready = 0;
+            this.game = null;
         }
 
         getPlayerId(socket)
@@ -37,55 +37,6 @@ module.exports = function(http)
                 if (player.socket != null && player != sourcePlayer) { f(player); }
             });
         }
-
-        // Listener interface
-        updateBoard() {}
-
-        deal(playerId, cardId)
-        {
-            // Tell the player their card
-            this.players[playerId].socket.emit('reveal', cardId, this.game.shuffle[cardId]);
-            console.log(this.key + ':' + playerId + ' reveal ' + cardId);
-        }
-
-        discard(cardId) {}
-
-        reveal(cardId, deckId)
-        {
-            this.reveals.push({cardId:cardId, deckId:deckId});
-        }
-
-        beginTurn(playerId)
-        {
-            // On a player's turn, listen for their action
-            let player = this.players[playerId];
-            player.socket.on('play', (action) =>
-            {
-                console.log(this.key + ':' + playerId + ' play');
-
-                // Stop listening
-                player.socket.removeAllListeners('play');
-
-                // Try to play the action
-                try
-                {
-                    this.game.play(action);   
-                }
-                catch (error)
-                {
-                    // Failed - bug or cheating
-                    console.log('game.play(): ' + error);
-                    this.reveals.length = 0;
-                    return;
-                    // TODO -- then what, DC the player?
-                }
-
-                // Forward the action to the other players
-                action.reveals = this.reveals;
-                this.broadcast(player => player.socket.emit('play', action), player);
-                this.reveals.length = 0;
-            });
-        }
     }
 
     // When a player connects
@@ -100,7 +51,7 @@ module.exports = function(http)
             if (key.length == 0)
             {
                 // Generate a random key
-                const keyChars = 'bcdfghjklmnpqrstvwxyz23456789';
+                const keyChars = 'bcdfghjklmnpqrstvwxyz';
                 for (let i = 0; i < 5; i++)
                 {
                     for (let i = 0; i < 6; i++)
@@ -203,9 +154,57 @@ module.exports = function(http)
                 room.started = true;
                 room.broadcast(player => player.socket.removeAllListeners('start'));
 
-                // Create the game
+                //
+                // Create the game and listen for its events
+                //
+
                 const shuffle = true;
-                room.game = new Game(room, room.players.length, shuffle);
+                let game = new Game(room.players.length, shuffle);
+                room.game = game;
+                let reveals = []; // List of reveals to send with the next play message
+
+                game.on('deal', (playerId, cardId) =>
+                {
+                    room.players[playerId].socket.emit('reveal', cardId, game.shuffle[cardId]);
+                    console.log(key + ':' + playerId + ' reveal ' + cardId);
+                });
+
+                game.on('reveal', (cardId) =>
+                {
+                    reveals.push({cardId:cardId, deckId:game.shuffle[cardId]});
+                });
+
+                game.on('beginTurn', (playerId) =>
+                {
+                    // On a player's turn, listen for their action
+                    let player = room.players[playerId];
+                    player.socket.on('play', (action) =>
+                    {
+                        console.log(key + ':' + playerId + ' play');
+
+                        // Stop listening
+                        player.socket.removeAllListeners('play');
+
+                        // Try to play the action
+                        try
+                        {
+                            game.play(action);   
+                        }
+                        catch (error)
+                        {
+                            // Failed - bug or cheating
+                            console.log(key + ':' + playerId + ' play error ' + error);
+                            reveals.length = 0;
+                            return;
+                            // TODO -- then what, DC the player?
+                        }
+
+                        // Forward the action to the other players
+                        action.reveals = reveals;
+                        room.broadcast(player => player.socket.emit('play', action), player);
+                        reveals.length = 0;
+                    });
+                });
             });
 
             socket.on('ready', () =>

@@ -1,8 +1,9 @@
-// Requires socket.io.js in the global scope.
+// This requires the socket.io.js client in the global scope
+const Client = require('./client.js');
 
 // Entry point.
 // Manages the lobby UI in index.html.
-function main()
+$(function()
 {
     let host = false;
     let socket = null;
@@ -150,4 +151,4 @@ function main()
         // Don't reload the page
         return false;
     });
-}
+});
