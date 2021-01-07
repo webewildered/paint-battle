@@ -446,9 +446,50 @@ class Board
     // scale: positive integer pixel multiplier
     // palette: map values in this to [r, g, b, a].
     // buffer: UInt8Array.  r(0, 0), g(0, 0), b(0, 0), a(0, 0), r(1, 0), ..., a(width - 1, 0), r(0, 1), ...
-    render(scale, palette, buffer = new Uint8Array(this.bufferSize(scale)))
+    render(scale, palette, buffer = null)
     {
-        if (buffer.length != this.bufferSize(scale))
+        if (buffer == null)
+        {
+            buffer = new Uint8Array(this.bufferSize(scale))
+        }
+        else if (buffer.length != this.bufferSize(scale))
+        {
+            throw 'Incorrect buffer size';
+        }
+
+        const pixel = 4;
+        let pitch = this.width * pixel * scale;
+        for (let i = 0; i < this.width; i++)
+        {
+            for (let j = 0; j < this.height; j++)
+            {
+                let color = palette[this.get(i, j)];
+                let k = j * pitch * scale + i * pixel * scale;
+                for (let u = 0; u < scale; u++)
+                {
+                    for (let v = 0; v < scale; v++)
+                    {
+                        let l = k + pixel * v;
+                        buffer[l] = color[0];
+                        buffer[l + 1] = color[1];
+                        buffer[l + 2] = color[2];
+                        buffer[l + 3] = color[3];
+                    }
+                    k += pitch;
+                }
+            }
+        }
+
+        return buffer;
+    }
+
+    render2(scale, palette, buffer = null)
+    {
+        if (buffer == null)
+        {
+            buffer = new Uint8ClampedArray(this.bufferSize(scale))
+        }
+        else if (buffer.length != this.bufferSize(scale))
         {
             throw 'Incorrect buffer size';
         }

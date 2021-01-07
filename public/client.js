@@ -1,3 +1,4 @@
+const PIXI = require('pixi.js-legacy')
 const CardType = require('./CardType.js');
 const Game = require('./game.js');
 const Board = require('./board.js');
@@ -35,10 +36,66 @@ function cardName(card)
 }
 
 // Render a board to a PIXI texture
-function rtt(board, scale, palette)
+function rtt(board, scale, palette, buffer = null)
 {
+    buffer = board.render2(scale, palette, buffer);
+    let imageData = new ImageData(buffer, scale * board.width);
+    
+    let canvas = document.createElement('canvas');
+    canvas.width = scale * board.width;
+    canvas.height = scale * board.height;
+    let ctx = canvas.getContext("2d");
+    ctx.putImageData(imageData, 0, 0);
+    let texture = PIXI.Texture.from(canvas);
+    return texture;
+
+    // Render to canvas with rectangles, then upload to texture.  Works without webGL, faster than PIXI.graphics, but still rather slow.
+    /*
+    let canvas = document.createElement('canvas');
+    canvas.width = scale * board.width;
+    canvas.height = scale * board.height;
+    
+    let ctx = canvas.getContext("2d");
+    for (let i = 0; i < board.width; i++)
+    {
+        for (let j = 0; j < board.height; j++)
+        {
+            let c = palette[board.get(i, j)];
+            ctx.fillStyle = 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + c[3] + ')';
+            ctx.fillRect(i * scale, j * scale, 2, 2);
+        }
+    }
+
+    let texture = PIXI.Texture.from(canvas);
+    return texture;
+    */
+
+    // Texture from BR.  Fast, but only works with webGL enabled
+    /*
     let options = {width: scale * board.width, height: scale * board.height};
-    return PIXI.Texture.from(new PIXI.resources.BufferResource(board.render(scale, palette), options));
+    return PIXI.Texture.from(new PIXI.resources.BufferResource(board.render(scale, palette, buffer), options));
+    */
+
+    // Render graphics to texture.  Works without webGL but very slow. 
+    /*
+    let texture = PIXI.RenderTexture.create(scale * board.width, scale * board.height);
+    let graphics = new PIXI.Graphics();
+    for (let i = 0; i < board.width; i++)
+    {
+        for (let j = 0; j < board.height; j++)
+        {
+            let c = palette[board.get(i, j)];
+            graphics.beginFill((c[2] << 16) + (c[1] << 8) + c[0]);
+            graphics.drawRect(i * scale, j * scale, 2, 2);
+            graphics.endFill();
+        }
+    }
+    //graphics.beginFill(colors[0]);
+    //graphics.drawRect(0, 0, 100, 100);
+    //graphics.endFill();
+    app.renderer.render(graphics, texture);
+    return texture;
+    */
 }
 
 // Returns a Board representing what the card will allow the player to draw
@@ -120,11 +177,7 @@ class Client
 
         game.on('updateBoard', () =>
         {
-            game.board.render(scale, this.palette, this.buffer);
-            let boardSize = scale * game.size;
-            let options = {width: boardSize, height: boardSize};
-            let resource = new PIXI.resources.BufferResource(this.buffer, options);
-            this.boardSprite.texture = PIXI.Texture.from(resource);
+            this.boardSprite.texture = rtt(game.board, scale, this.palette, this.buffer);
     
             let count = game.board.count(this.players.length + 1);
             for (let i = 0; i < this.players.length; i++)
@@ -158,19 +211,19 @@ class Client
         });
 
         // Create the app
-        this.app = new PIXI.Application({
+        app = new PIXI.Application({
             width: window.innerWidth, height: window.innerHeight, backgroundColor: 0xeeeeee, resolution: window.devicePixelRatio || 1, antialias: true
         });
-        document.body.appendChild(this.app.view);
+        document.body.appendChild(app.view);
 
-        this.app.stage.interactive = true;
-        this.app.stage.on('mousemove', this.mouseMove, this);
-        this.app.ticker.add(this.update, this);
+        app.stage.interactive = true;
+        app.stage.on('mousemove', this.mouseMove, this);
+        app.ticker.add(this.update, this);
 
         // Create the color palettes        
         function rgba(color)
         {
-            return [color >> 24, (color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
+            return [Math.floor(color / 0x1000000), Math.floor(color / 0x10000) & 0xff, Math.floor(color / 0x100) & 0xff, color & 0xff];
         }
         this.palette = new Array(numPlayers + 1);
         this.previewPalette = new Array(this.palette.length);
@@ -188,11 +241,11 @@ class Client
 
         // Container for the board and everything tied to its position
         this.boardContainer = new PIXI.Container();
-        this.app.stage.addChild(this.boardContainer);
+        app.stage.addChild(this.boardContainer);
 
         // Game board display
         let boardSize = game.size * 2;
-        this.buffer = new Uint8Array(boardSize * boardSize * 4);
+        this.buffer = new Uint8ClampedArray(boardSize * boardSize * 4);//new Uint8Array(boardSize * boardSize * 4);
         this.boardGraphics = new PIXI.Graphics();
         this.boardContainer.addChild(this.boardGraphics);
         this.boardSprite = new PIXI.Sprite();
@@ -200,7 +253,7 @@ class Client
         this.boardContainer.addChild(this.boardSprite);
 
         // Board overlay for preview of player actions
-        this.overlayBuffer = new Uint8Array(boardSize * boardSize * 4);
+        this.overlayBuffer = new Uint8ClampedArray(boardSize * boardSize * 4);//new Uint8Array(boardSize * boardSize * 4);
         this.overlayBoard = new Board(game.size, game.size);
         this.overlaySprite = new PIXI.Sprite();
         this.overlaySprite.visible = false;
@@ -237,7 +290,7 @@ class Client
         this.pile = new PIXI.Container;
         this.pile.x = 10;
         this.pile.y = 10;
-        this.app.stage.addChild(this.pile);
+        app.stage.addChild(this.pile);
 
         this.pileCard = new CCard(-1);
         this.pile.addChild(this.pileCard.graphics);
@@ -248,7 +301,7 @@ class Client
 
         // Create the status bar
         this.status = new PIXI.Text('', {fontFamily : 'Arial', fontSize: 24, fill : 0x000000});
-        this.app.stage.addChild(this.status);
+        app.stage.addChild(this.status);
 
         // Create players
         this.players = new Array(numPlayers);
@@ -297,10 +350,10 @@ class Client
         {
             let w = window.innerWidth;
             let h = window.innerHeight;
-            this.app.resize(w, h);
-            this.app.view.style.width = w;
-            this.app.view.style.height = h;
-            this.app.renderer.resize(w, h);
+            app.resize(w, h);
+            app.view.style.width = w;
+            app.view.style.height = h;
+            app.renderer.resize(w, h);
             client.layout();
         }
         window.onresize(); // pixi scales incorrectly when res != 1, resize now to fix it
@@ -327,8 +380,8 @@ class Client
     setCursorStyle(cursorStyle)
     {
         document.body.style.cursor = cursorStyle;
-        this.app.renderer.plugins.interaction.cursorStyles.default = cursorStyle;
-        this.app.renderer.plugins.interaction.cursorStyles.hover = cursorStyle;
+        app.renderer.plugins.interaction.cursorStyles.default = cursorStyle;
+        app.renderer.plugins.interaction.cursorStyles.hover = cursorStyle;
     }
 
     updatePile()
@@ -595,11 +648,7 @@ class Client
 
     updateOverlayBoard()
     {
-        this.overlayBoard.render(scale, this.previewPalette, this.overlayBuffer);
-        let boardSize = scale * game.size;
-        let options = {width: boardSize, height: boardSize};
-        let resource = new PIXI.resources.BufferResource(this.overlayBuffer, options);
-        this.overlaySprite.texture = PIXI.Texture.from(resource);
+        this.overlaySprite.texture = rtt(this.overlayBoard, scale, this.previewPalette, this.overlayBuffer);
     }
 }
 
@@ -624,7 +673,7 @@ class CPlayer
         this.container.addChild(this.status);
         this.lastPlayed = null;
 
-        client.app.stage.addChild(this.container);
+        app.stage.addChild(this.container);
     }
 
     updateStatus()
@@ -746,13 +795,13 @@ class CCard extends EventEmitter
         });
 
         // Add to ticker for animated position updates
-        client.app.ticker.add(this.update, this);
+        app.ticker.add(this.update, this);
     }
     
     // Call to destroy graphics resources
     destroy()
     {
-        client.app.ticker.remove(this.update, this);
+        app.ticker.remove(this.update, this);
         this.graphics.destroy();
     }
 
