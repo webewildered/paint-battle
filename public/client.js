@@ -38,7 +38,7 @@ function cardName(card)
 // Render a board to a PIXI texture
 function rtt(board, scale, palette, buffer = null)
 {
-    buffer = board.render2(scale, palette, buffer);
+    buffer = board.render(scale, palette, buffer);
     let imageData = new ImageData(buffer, scale * board.width);
     
     let canvas = document.createElement('canvas');
@@ -48,54 +48,6 @@ function rtt(board, scale, palette, buffer = null)
     ctx.putImageData(imageData, 0, 0);
     let texture = PIXI.Texture.from(canvas);
     return texture;
-
-    // Render to canvas with rectangles, then upload to texture.  Works without webGL, faster than PIXI.graphics, but still rather slow.
-    /*
-    let canvas = document.createElement('canvas');
-    canvas.width = scale * board.width;
-    canvas.height = scale * board.height;
-    
-    let ctx = canvas.getContext("2d");
-    for (let i = 0; i < board.width; i++)
-    {
-        for (let j = 0; j < board.height; j++)
-        {
-            let c = palette[board.get(i, j)];
-            ctx.fillStyle = 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + c[3] + ')';
-            ctx.fillRect(i * scale, j * scale, 2, 2);
-        }
-    }
-
-    let texture = PIXI.Texture.from(canvas);
-    return texture;
-    */
-
-    // Texture from BR.  Fast, but only works with webGL enabled
-    /*
-    let options = {width: scale * board.width, height: scale * board.height};
-    return PIXI.Texture.from(new PIXI.resources.BufferResource(board.render(scale, palette, buffer), options));
-    */
-
-    // Render graphics to texture.  Works without webGL but very slow. 
-    /*
-    let texture = PIXI.RenderTexture.create(scale * board.width, scale * board.height);
-    let graphics = new PIXI.Graphics();
-    for (let i = 0; i < board.width; i++)
-    {
-        for (let j = 0; j < board.height; j++)
-        {
-            let c = palette[board.get(i, j)];
-            graphics.beginFill((c[2] << 16) + (c[1] << 8) + c[0]);
-            graphics.drawRect(i * scale, j * scale, 2, 2);
-            graphics.endFill();
-        }
-    }
-    //graphics.beginFill(colors[0]);
-    //graphics.drawRect(0, 0, 100, 100);
-    //graphics.endFill();
-    app.renderer.render(graphics, texture);
-    return texture;
-    */
 }
 
 // Returns a Board representing what the card will allow the player to draw
