@@ -6,7 +6,8 @@ const CardType =
     LINE: 'line',
     PAINT: 'paint',
     FILL: 'fill',
-    ERASER: 'eraser'
+    ERASER: 'eraser',
+    DYNAMITE: 'dynamite'
 }
 
 module.exports = CardType;

@@ -13,18 +13,23 @@ class Board
     // Accessors
     //
 
+    getIndex(x, y)
+    {
+        return x + y * this.width;
+    }
+
     get(x, y)
     {
         if (x >= 0 && x < this.width && y >= 0 && y < this.height)
         {
-            return this.data[x + y * this.width];
+            return this.data[this.getIndex(x, y)];
         }
         return null;
     }
 
     set(x, y, c)
     {
-        this.data[x + y * this.width] = c;
+        this.data[this.getIndex(x, y)] = c;
     }
 
     //
@@ -57,9 +62,11 @@ class Board
     // Calls f for each pixel on a line from (x, y) to (ex, ey).  Terminates if f does not return true.
     // If clamp is false, the line will terminate when it reaches an edge of the board.
     // If clamp is true, the line will continue along that edge, terminating only if it is perpendicular to the edge or if it reaches a corner.
+    // If single is false, f is called for every pixel that the line crosses through, so the line is a sequence of horizontal and vertical steps.
+    // If single is true, then whenever the line would take a vertical step after a horizontal one or vice versa, it takes a single diagonal step instead.
     // Input coordinates are snapped to the middle of each pixel.
     // TODO - check the perpendicular cases.  Check behavior if the line begins outside of the board (we don't need to support that case, yet)
-    linef(x, y, ex, ey, clamp, f)
+    linef(x, y, ex, ey, clamp, single, f)
     {
         // Line origin and direction
         let dx = ex - x;
@@ -79,15 +86,16 @@ class Board
         let rx = 0.5;
         let ry = 0.5;
 
+        // Previous step was in the x direction, y direction, or neither
+        const nDir = -1;
+        const xDir = single ? 0 : nDir;
+        const yDir = single ? 1 : nDir;
+        let dir = nDir;
+
         let i = 0;
+        console.log('line')
         while (true)
         {
-            // Call f and check if it requests the line to terminate
-            if (!f(u, v))
-            {
-                break;
-            }
-            
             // Check if the end of the line was reached
             if (u == ex && v == ey)
             {
@@ -96,6 +104,21 @@ class Board
 
             if (rx * ady < ry * adx)
             {
+                // Check for diagonal step
+                if (dir != xDir && dir != nDir)
+                {
+                    // Skip the last pixel
+                    dir = nDir;
+                }
+                else
+                {
+                    if (!f(u, v))
+                    {
+                        break;
+                    }
+                    dir = xDir;
+                }
+
                 // move in x
                 ry -= rx * adydx;
                 rx = 1;
@@ -118,6 +141,21 @@ class Board
             }
             else
             {
+                // Check for diagonal step
+                if (dir != yDir && dir != nDir)
+                {
+                    // Skip the last pixel
+                    dir = nDir;
+                }
+                else
+                {
+                    if (!f(u, v))
+                    {
+                        break;
+                    }
+                    dir = yDir;
+                }
+                
                 // move in y
                 rx -= ry * adxdy;
                 ry = 1;
@@ -201,7 +239,8 @@ class Board
     line(x, y, ex, ey, p, c, board)
     {
         const clamp = false;
-        this.linef(x, y, ex, ey, clamp, (u, v) => 
+        const single = false;
+        this.linef(x, y, ex, ey, clamp, single, (u, v) => 
         {
             this.set(u, v, c);
             if (--p == 0)
@@ -216,7 +255,8 @@ class Board
     paint(x, y, ex, ey, r, p, c, board)
     {
         const clamp = true;
-        this.linef(x, y, ex, ey, clamp, (u, v) => 
+        const single = false;
+        this.linef(x, y, ex, ey, clamp, single, (u, v) => 
         {
             this.circlef(u, v, r, (u, v) =>
             {
@@ -313,7 +353,7 @@ class Board
                 if (isoBoard.get(u, v) == c)
                 {
                     cost = 0;
-                }
+                } 
                 if (cost <= r)
                 {
                     queue.queue({x:u, y:v, cost:cost});
@@ -368,6 +408,292 @@ class Board
         }
     }
 
+    // Push pixels outwards from a central point
+    dynamite(x, y, r, e)
+    {
+        let step = this.dynamiteStep(x, y, r, e);
+        while (step()) {}
+        return false;
+    }
+    
+    // Return a stepping function that incrementally applies dynamite().
+    // Call the stepping function until it returns false.
+    // This can be used to animate the process.
+    dynamiteStep(x, y, r, e)
+    {
+        let area = Math.PI * r * r;
+
+        let rounds = 10;
+        let stepsPerRound = Math.floor(Math.PI * r);
+        let steps = rounds * stepsPerRound;
+        let anglePerStep = 2 * rounds * Math.PI / (steps - 1);
+
+        let i = 0;
+        return () =>
+        {
+            if (i >= steps)
+            {
+                return false;
+            }
+            let n = i + stepsPerRound;
+            for (; i < n; i++)
+            {
+                let angle = i * anglePerStep;
+                let xDir = Math.cos(angle);
+                let yDir = Math.sin(angle);
+                let rInt = Math.floor(r / rounds);
+                let queue = new Array(Math.floor(rInt)).fill(e);
+                let pressure = 0.5;
+                let ex = Math.floor(x + xDir * r * 100);
+                let ey = Math.floor(y + yDir * r * 100);
+                let rSq = r * r;
+
+                const clamp = true;
+                const single = true;
+                this.linef(x, y, ex, ey, clamp, single, (u, v) =>
+                {
+                    let xDiff = u - x;
+                    let yDiff = v - y;
+                    let distSq = xDiff * xDiff + yDiff * yDiff;
+
+                    let c = this.get(u, v);
+                    this.set(u, v, queue.shift());
+                    if (distSq > rSq)
+                    {
+                        if (c == e)
+                        {
+                            pressure += 0.33;
+                        }
+                        else
+                        {
+                            pressure += 0.9;
+                        }
+                        if (pressure > 1)
+                        {
+                            pressure -= 1;
+                            queue.push(c);
+                        }
+                        return (queue.length > 0);
+                    }
+                    else
+                    {
+                        queue.push(c);
+                        return true;
+                    }
+                });
+            }
+            return true;
+        }
+    }
+
+    // Particle sim dynamite method -- too slow
+    dynamite2(x, y, r, e)
+    {
+        // Helper for applying particle repulsion forces in a pair of cells.  cell0 may equal cell1.
+        function force(cell0, cell1, h)
+        {
+            const repulsionDistance = (cell0 == cell1) ? Math.sqrt(2) : 1;
+            const repulsionForce = 100;
+
+            // For each pair of particles
+            for (let i = 0; i < cell0.length; i++)
+            {
+                let p = cell0[i];
+                for (let j = 0; j < cell1.length; j++)
+                {
+                    let q = cell1[j];
+                    if (p == q)
+                    {
+                        continue; // no self-force
+                    }
+
+                    // Calculate distance between the particles and check if they're close enough to apply a repulsion force
+                    let dx = p.x - q.x;
+                    let dy = p.y - q.y;
+                    let dSq = dx * dx + dy * dy;
+                    if (dSq < repulsionDistance * repulsionDistance)
+                    {
+                        let d = Math.sqrt(dSq);
+                
+                        // Calculate the unit direction
+                        // Special case to (1, 0) if the particle is exactly on the center
+                        if (d == 0)
+                        {
+                            dx = 1;
+                            dy = 0;
+                        }
+                        else
+                        {
+                            let invD = 1 / d;
+                            dx *= invD;
+                            dy *= invD;
+                        }
+
+                        // Apply explosive force to the particles
+                        let dv = Math.sqrt(repulsionDistance - d) * repulsionForce * h * 0.5;
+                        p.vx += dx * dv;
+                        p.vy += dy * dv;
+                        q.vx -= dx * dv;
+                        q.vy -= dy * dv;
+                    }
+                }
+            }
+        }
+        
+        // Convert pixels to particles
+        let particles = new Array(this.data.length);
+        let particles2 = new Array(this.data.length); // backbuffer
+        let maxValue = e;
+        for (let i = 0; i < this.data.length; i++)
+        {
+            let c = this.data[i];
+            if (c == e)
+            {
+                particles[i] = [];
+            }
+            else
+            {
+                maxValue = Math.max(maxValue, c);
+                particles[i] = [{x: i % this.width + 0.5, y: Math.floor(i / this.width) + 0.5, vx: 0, vy: 0, c: c }];
+            }
+            particles2[i] = [];
+        }
+
+        // Simulate
+        const h = 1 / 100;
+        const steps = 100;
+        const explosionSteps = 10;
+        const explosionForce = 100;
+        for (let step = 0; step < steps; step++)
+        {
+            // Apply explosive force to all particles
+            if (step < explosionSteps)
+            {
+                // Explosion force starts high and scales down
+                let f = explosionForce * (1 - step / explosionSteps);
+
+                // For each cell within the explosion radius
+                this.circlef(x, y, r, (u, v) =>
+                {
+                    // For each particle in the cell
+                    let i = this.getIndex(u, v);
+                    for (let j = 0; j < particles[i].length; j++)
+                    {
+                        // Calculate the particle's distance from the explosion center and check if it's within the radius
+                        let p = particles[i][j];
+                        let dx = p.x - x;
+                        let dy = p.y - y;
+                        let d = Math.sqrt(dx * dx + dy * dy);
+                        if (d < r)
+                        {
+                            // Calculate the unit direction from the explosion center
+                            // Special case to (1, 0) if the particle is exactly on the center
+                            if (d == 0)
+                            {
+                                dx = 1;
+                                dy = 0;
+                            }
+                            else
+                            {
+                                let invD = 1 / d;
+                                dx *= invD;
+                                dy *= invD;
+                            }
+
+                            // Apply explosive force to the particle
+                            let dv = Math.sqrt(r - d) * f * h;
+                            p.vx += dx * dv;
+                            p.vy += dy * dv;
+                        }
+                    }
+                });
+            }
+
+            // Apply forces between particles and integrate them into the backbuffer
+            for (let u = 0; u < this.width; u++)
+            {
+                for (let v = 0; v < this.height; v++)
+                {
+                    // Apply forces within the cell
+                    let i = this.getIndex(u, v)
+                    force(particles[i], particles[i], h);
+
+                    // Apply forces to neighboring cells
+                    let du = (u != this.width - 1);
+                    let dv = (v != this.height - 1);
+                    if (du)
+                    {
+                        force(particles[i], particles[i + 1], h);
+                        if (dv)
+                        {
+                            force(particles[i], particles[i + 1 + this.height], h);
+                        }
+                    }
+                    if (dv)
+                    {
+                        force(particles[i], particles[i + this.height], h);
+                    }
+
+                    // Integrate
+                    for (let j = 0; j < particles[i].length; j++)
+                    {
+                        let p = particles[i][j]
+                        p.x += p.vx * h;
+                        p.y += p.vy * h;
+                        let pu = Math.floor(p.x);
+                        let pv = Math.floor(p.y);
+                        if (pu >= 0 && pu < this.width && pv >= 0 && pv < this.height)
+                        {
+                            particles2[this.getIndex(pu, pv)].push(p);
+                        } // else particle is off the board and will be removed
+                    }
+                }
+            }
+
+            // Swap buffers and clear the backbuffer
+            let temp = particles;
+            particles = particles2;
+            particles2 = temp;
+            for (let i = 0; i < particles2.length; i++)
+            {
+                particles2[i].length = 0;
+            }
+        }
+
+        // Render particles back to the board
+        let lost = 0;
+        for (let i = 0; i < particles.length; i++)
+        {
+            let c = e;
+            if (particles[i].length == 1)
+            {
+                // Single particle in the cell, take its color
+                c = particles[i][0].c;
+            }
+            else if (particles[i].length > 1)
+            {
+                lost += particles[i].length - 1;
+                // Find what color has the most particles in this cell
+                // (In the future maybe consider some biasing in case of ties for fairness, might not be needed though).
+                let count = new Array(maxValue + 1).fill(0);
+                let maxCount = 0;
+                for (let j = 0; j < particles[i].length; j++)
+                {
+                    let pc = particles[i][j].c;
+                    count[pc]++;
+                    if (count[pc] > maxCount)
+                    {
+                        maxCount = count[pc];
+                        c = pc;
+                    }
+                }
+            } // else c = e because the cell is empty
+
+            this.data[i] = c;
+        }
+        console.log("lost " + lost);
+    }
+
     //
     // Composition
     //
@@ -383,6 +709,13 @@ class Board
     {
         this.matchDimensions(src);
         this.allf((i) => { this.data[i] = src.data[i]; });
+    }
+
+    clone()
+    {
+        let board = new Board(this.width, this.height);
+        board.copy(this);
+        return board;
     }
 
     // For every pixel of src set to c, sets the same pixel in this board to c.  Src must have the same dimensions as this.

@@ -6,5 +6,10 @@
             "type": "shell",
             "command": "browserify --debug lobby.js -o bundle.js"
         }
+        {
+            "label": "browserifyTest",
+            "type": "shell",
+            "command": "browserify --debug test.js -o testbundle.js"
+        }
     ]
 }
