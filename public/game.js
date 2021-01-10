@@ -43,9 +43,9 @@ class Game extends EventEmitter
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 3, radius: 25.5, angle: 0.2, name: 'Polygon' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 5, radius: 23.5, angle: 0.4, name: 'Polygon' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 7, radius: 21.5, angle: 0.6, name: 'Polygon' }));
-        this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.DYNAMITE, radius: 20.5 }));
+        this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.DYNAMITE, radius: 40.5 }));
        
-        //this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.LINE, pixels: 140, name: 'Line' }));
+        // this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.LINE, pixels: 140, name: 'Line' }));
 
         // Shuffle the deck on server (shuffle = true), mark all cards hidden on client (shuffle = false)
         let count = this.deck.length;

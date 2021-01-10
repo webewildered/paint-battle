@@ -108,11 +108,11 @@ function renderCard(card, on, off, minSize = 0)
     return board;
 }
 
-class Client
+class Client extends EventEmitter
 {
     constructor()
     {
-        console.log('Client()!!!');
+        super();
     }
 
     begin(socket, playerNames, localPlayerId)
@@ -163,9 +163,7 @@ class Client
         });
         document.body.appendChild(app.view);
 
-        app.stage.interactive = true;
-        app.stage.on('mousemove', this.mouseMove, this);
-        app.ticker.add(this.update, this);
+        app.ticker.add(this.updateMouse, this);
 
         // Create the color palettes        
         function rgba(color)
@@ -207,30 +205,19 @@ class Client
         this.boardContainer.addChild(this.overlaySprite);
 
         //
-        // Mouse interaction setup
+        // Setup mouse events
         //
-
-        // Collection of mouse moves since the last update
-        this.mouseMoves = [];
-
-        this.onBoardMouseUp = null;
-        this.boardSprite.on('mouseup', (event) =>
-        {
-            let point = event.data.getLocalPosition(this.boardSprite);
-            if (this.onBoardMouseUp)
-            {
-                this.onBoardMouseUp(Math.floor(point.x / 2), Math.floor(point.y / 2));
-            }
-        });
         
         this.onBoardMouseDown = null;
         this.boardSprite.on('mousedown', (event) =>
         {
-            let point = event.data.getLocalPosition(this.boardSprite);
-            if (this.onBoardMouseDown)
-            {
-                this.onBoardMouseDown({x: Math.floor(point.x / 2), y: Math.floor(point.y / 2)});
-            }
+            this.emit('boardClick', this.getBoardPosition(event.data));
+        });
+        
+        app.stage.interactive = true;
+        app.stage.on('mousemove', (event) =>
+        {
+            this.emit('mouseMove', this.getBoardPosition(event.data));
         });
 
         // Create the draw pile
@@ -305,7 +292,16 @@ class Client
         }
         window.onresize(); // pixi scales incorrectly when res != 1, resize now to fix it
     }
+
+    // Returns the position of the mouse in board-space, {x:int, y:int}
+    // Either pass a mouse event.data, or call without arguments to use the current mouse position
+    getBoardPosition(interactionData = app.renderer.plugins.interaction.mouse)
+    {
+        let point = interactionData.getLocalPosition(this.boardSprite);
+        return { x: Math.floor(point.x / 2), y: Math.floor(point.y / 2) };
+    }
     
+    // Returns true if this game is run entirely in the client, with no server connection
     isLocalGame() { return (this.localPlayerId == -1); }
 
     layout()
@@ -338,81 +334,17 @@ class Client
         this.pileText.y = 10;
     }
 
-    update(delta)
+    updateMouse(delta)
     {
-        if (this.explode != null)
+        if (this.dirty)
         {
-            if (this.explode() == false)
-            {
-                this.explode = null;
-            }
+            this.updateOverlayBoard();
         }
-
-        if (this.mouseMoves.length == 0)
-        {
-            return;
-        }
-
-        let point = this.mouseMoves[this.mouseMoves.length - 1];
-        this.lastPoint = point;
 
         if (this.cursor != null)
         {
             this.updateCursor();
         }
-
-        if (this.preview)
-        {
-            let card = game.deck[game.shuffle[this.currentCardId]];
-            switch (card.type)
-            {
-                case CardType.LINE:
-                    this.overlayBoard.clear(this.previewPalette.length - 1);
-                    this.overlayBoard.line(this.xPivot, this.yPivot, point.x, point.y, card.pixels, 0);
-                    break;
-                case CardType.FILL:
-                    let isoBoard = new Board(this.overlayBoard.width, this.overlayBoard.height);
-                    isoBoard.isolate(point.x, point.y, game.currentPlayer, this.palette.length - 1, game.board);
-                    this.overlayBoard.outline(game.currentPlayer, 0, this.previewPalette.length - 1, isoBoard);
-                    break;
-                case CardType.PAINT:
-                    let last = null;
-                    for (let i = 0; i < this.mouseMoves.length; i++)
-                    {
-                        let next = this.mouseMoves[i];
-                        if (this.paintPoints.length == 0)
-                        {
-                            last = next;
-                        }
-                        else
-                        {
-                            last = this.paintPoints[this.paintPoints.length - 1];
-                            if (next.x == last.x && next.y == last.y)
-                            {
-                                continue;
-                            }
-                        }
-                        this.paintPoints.push(next);
-                        let paintPixels = this.overlayBoard.paint(last.x, last.y, next.x, next.y, card.radius, this.paintPixels, game.currentPlayer);
-                        this.paintPixels = Math.min(paintPixels, this.paintPixels - 1);
-                        if (this.paintPixels <= 0)
-                        {
-                            this.endPaint();
-                            break;
-                        }
-                        else
-                        {
-                            this.status.text = 'Painting (' + this.paintPixels + 'px left)';
-                        }
-                    }
-                    break;
-                default:
-                    throw 'preview unexpected card type';
-            }
-            this.updateOverlayBoard();
-        }
-
-        this.mouseMoves.length = 0;
     }
 
     playCard(cardId)
@@ -425,6 +357,7 @@ class Client
         this.status.text = 'Playing ' + cardName(card) + ' - click on the board to draw, starting on your own color!';
 
         // Set the card's event listener
+        let listener = null;
         switch (card.type)
         {
             // Single-click cards with no special visualization
@@ -432,7 +365,7 @@ class Client
             case CardType.BOX:
             case CardType.POLY:
             case CardType.ERASER:
-                this.onBoardMouseDown = (point) =>
+                listener = (point) =>
                 {
                     point = this.getPlayPosition(point);
                     if (point == null)
@@ -440,7 +373,7 @@ class Client
                         return;
                     }
 
-                    this.onBoardMouseDown = null;
+                    this.off('boardClick', listener);
                     this.playAction({cardId:cardId, x:point.x, y:point.y});
                     this.clearCursor();
                 }
@@ -448,61 +381,132 @@ class Client
 
             // Line - two clicks with line visualization after the first click
             case CardType.LINE:
-                this.onBoardMouseDown = (point) =>
+                listener = (point) =>
                 {
                     point = this.getPlayPosition(point);
                     if (point == null)
                     {
                         return;
                     }
-
-                    // 1st point
-                    this.xPivot = point.x;
-                    this.yPivot = point.y;
+                    this.off('boardClick', listener);
                     this.beginPreview();
-                    this.onBoardMouseDown = (point) =>
+
+                    // Update the visualization each frame to show the line to the current mouse position
+                    let update = () =>
+                    {
+                        let point2 = this.getBoardPosition();
+                        this.overlayBoard.clear(this.previewPalette.length - 1);
+                        this.overlayBoard.line(point.x, point.y, point2.x, point2.y, card.pixels, 0);
+                        this.updateOverlayBoard();
+                    }
+                    app.ticker.add(update);
+
+                    // Listen for the second click
+                    listener = (point2) =>
                     {
                         // 2nd point
-                        this.onBoardMouseDown = null;
-                        this.playAction({cardId:cardId, x:this.xPivot, y:this.yPivot, x2:point.x, y2:point.y});
+                        this.off('boardClick', listener);
+                        app.ticker.remove(update);
+                        this.playAction({cardId:cardId, x:point.x, y:point.y, x2:point2.x, y2:point2.y});
                         this.endPreview();
                     };
+                    this.on('boardClick', listener);
                 }
                 break;
             
             // Paint - two clicks with visualization after the first click
             case CardType.PAINT:
-                this.onBoardMouseDown = (point) =>
+                listener = (point) =>
                 {
                     point = this.getPlayPosition(point);
                     if (point == null)
                     {
                         return;
                     }
-                    
-                    // Setup the paint visualization
+                    this.off('boardClick', listener);
                     this.beginPreview();
-                    this.paintPoints = [];
-                    this.mouseMoves = [point]; // Fake a mouse move event to draw in the start position
-                    this.paintPixels = card.pixels;
-                    this.onBoardMouseDown = (point) =>
+
+                    // Update the visualization on mouse move
+                    let paintPoints = [];
+                    let paintPixels = card.pixels;
+                    let moveListener = (point) =>
                     {
-                        this.endPaint();
-                    };
+                        let last = null;
+                        if (paintPoints.length == 0)
+                        {
+                            last = point;
+                        }
+                        else
+                        {
+                            last = paintPoints[paintPoints.length - 1];
+                            if (point.x == last.x && point.y == last.y)
+                            {
+                                return;
+                            }
+                        }
+                        paintPoints.push(point);
+                        let newPaintPixels = this.overlayBoard.paint(last.x, last.y, point.x, point.y, card.radius, paintPixels, game.currentPlayer);
+                        this.dirty = true;
+                        paintPixels = Math.min(newPaintPixels, paintPixels - 1);
+                        if (paintPixels <= 0)
+                        {
+                            // Stop painting, same as if the user clicked
+                            listener();
+                        }
+                        else
+                        {
+                            this.status.text = 'Painting (' + paintPixels + 'px left)';
+                        }
+                    }
+                    this.on('mouseMove', moveListener);
+
+                    // Stop painting on click
+                    listener = (point) =>
+                    {
+                        this.off('mouseMove', moveListener);
+                        this.off('boardClick', listener);
+
+                        // Clear the preview
+                        this.overlayBoard.clear(this.previewPalette.length - 1);
+                        this.updateOverlayBoard();
+                
+                        this.onBoardMouseDown = null;
+                        this.playAction({cardId:cardId, points:paintPoints});
+                        
+                        this.endPreview();
+                    }
+                    this.on('boardClick', listener);
+
+                    // Fake a mouse move event to draw in the start position immediately
+                    moveListener(point);
                 }
                 break;
 
             // Fill - single click with visualization of the range that will be extended
             case CardType.FILL:
                 this.beginPreview();
-                this.onBoardMouseDown = (point) =>
+
+                // Update the visualization each frame to show the line to the current mouse position
+                let update = () =>
+                {
+                    let point = this.getBoardPosition();
+                    let isoBoard = new Board(this.overlayBoard.width, this.overlayBoard.height);
+                    isoBoard.isolate(point.x, point.y, game.currentPlayer, this.palette.length - 1, game.board);
+                    this.overlayBoard.outline(game.currentPlayer, 0, this.previewPalette.length - 1, isoBoard);
+                    this.updateOverlayBoard();
+                }
+                app.ticker.add(update);
+                
+                listener = (point) =>
                 {
                     point = this.getPlayPosition(point);
                     if (point == null)
                     {
                         return;
                     }
-                    this.onBoardMouseDown = null;
+                    this.off('boardClick', listener);
+                    app.ticker.remove(update);
+                    
                     this.playAction({cardId:cardId, x:point.x, y:point.y});
                     this.endPreview();
                 }
@@ -510,7 +514,7 @@ class Client
                 
             // Dynamite: animated after click
             case CardType.DYNAMITE:
-                this.onBoardMouseDown = (point) =>
+                listener = (point) =>
                 {
                     point = this.getPlayPosition(point);
                     if (point == null)
@@ -518,28 +522,32 @@ class Client
                         return;
                     }
 
+                    // Animate the explosion
                     let board = game.board.clone(); // make a copy of the original board
-                    let explodeStep = game.board.dynamiteStep(point.x, point.y, card.radius, this.players.length);
-                    this.explode = () =>
+                    let step = game.board.dynamiteStep(point.x, point.y, card.radius, this.players.length);
+                    let animate = () =>
                     {
-                        if (!explodeStep())
+                        // Step the animation
+                        if (!step())
                         {
-                            game.board = board; // restore the board from before animating the explosion on it
+                            // At the end of the animation: restore the original board, let the game apply the explosion, and end updates
+                            game.board = board;
                             this.playAction({cardId:cardId, x:point.x, y:point.y});
-                            return false;
+                            app.ticker.remove(animate);
                         }
-                        this.updateBoard();
-                        return true;
-                    }
 
-                    this.onBoardMouseDown = null;
+                        // Update the board, but not the count
+                        const updateCount = false;
+                        this.updateBoard(updateCount);
+                    };
+                    app.ticker.add(animate);
+
+                    this.off('boardClick', listener);
                     this.clearCursor();
                 }
                 break;
         }
-        
-        // Save the card for any visualization logic in update()
-        this.currentCardId = cardId;
+        this.on('boardClick', listener);
     }
 
     playAction(action)
@@ -632,7 +640,7 @@ class Client
 
     updateCursor()
     {
-        let point = this.lastPoint;
+        let point = this.getBoardPosition();
         this.cursor.x = scale * (point.x - Math.floor(this.cursor.width / (2 * scale)));
         this.cursor.y = scale * (point.y - Math.floor(this.cursor.height / (2 * scale)));
         
@@ -676,7 +684,6 @@ class Client
 
     beginPreview()
     {
-        this.preview = true;
         this.overlayBoard.clear(this.players.length);
         this.updateOverlayBoard();
         this.overlaySprite.visible = true;
@@ -684,45 +691,31 @@ class Client
 
     endPreview()
     {
-        this.preview = false;
         this.clearCursor();
         this.overlaySprite.visible = false;
     }
-
-    endPaint()
-    {
-        // Clear the preview
-        this.previewPaint = false;
-        this.overlayBoard.clear(this.previewPalette.length - 1);
-        this.updateOverlayBoard();
-
-        this.onBoardMouseDown = null;
-        this.playAction({cardId:this.currentCardId, points:this.paintPoints});
-        
-        this.endPreview();
-    }
-
-    mouseMove(event)
-    {
-        let point = event.data.getLocalPosition(this.boardSprite);
-        this.mouseMoves.push({x:Math.floor(point.x / scale), y:Math.floor(point.y / scale)});
-    }
-
     
-    updateBoard()
+    updateBoard(updateCount = true)
     {
+        let oldTexture = this.overlaySprite.texture;
         this.boardSprite.texture = rtt(game.board, scale, this.palette, this.buffer);
+        oldTexture.destroy();
         
-        let count = game.board.count(this.players.length + 1);
-        for (let i = 0; i < this.players.length; i++)
+        if (updateCount)
         {
-            this.players[i].setCount(count[i]);
+            let count = game.board.count(this.players.length + 1);
+            for (let i = 0; i < this.players.length; i++)
+            {
+                this.players[i].setCount(count[i]);
+            }
         }
     }
 
     updateOverlayBoard()
     {
+        let oldTexture = this.overlaySprite.texture;
         this.overlaySprite.texture = rtt(this.overlayBoard, scale, this.previewPalette, this.overlayBuffer);
+        oldTexture.destroy();
     }
 }
 
