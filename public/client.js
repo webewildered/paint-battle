@@ -237,6 +237,24 @@ class Client extends EventEmitter
         this.status = new PIXI.Text('', {fontFamily : 'Arial', fontSize: 24, fill : 0x000000});
         app.stage.addChild(this.status);
 
+        // Create the cancel button
+        this.cancel = new PIXI.Graphics;
+        this.cancel.interactive = true;
+        this.cancel.lineStyle(2, 0x333333, 1);
+        this.cancel.beginFill(0xffffff);
+        this.cancel.drawRoundedRect(0, 0, 200, 50, 5);
+        this.cancel.endFill();
+        this.cancel.on('mousedown', (event) =>
+        {
+            this.emit('cancel');
+        });
+        app.stage.addChild(this.cancel);
+        let cancelText = new PIXI.Text('Cancel', {fontFamily : 'Arial', fontSize: 24, fill : 0x000000});
+        cancelText.x = Math.floor((this.cancel.width - cancelText.width) / 2);
+        cancelText.y = Math.floor((this.cancel.height - cancelText.height) / 2);
+        this.cancel.addChild(cancelText);
+        this.cancel.visible = false;
+
         // Create players
         this.players = new Array(numPlayers);
         for (let i = 0; i < numPlayers; i++)
@@ -318,6 +336,9 @@ class Client extends EventEmitter
 
         this.status.x = 10;
         this.status.y = this.boardContainer.y + this.boardContainer.height + 10;
+        
+        this.cancel.x = 10;
+        this.cancel.y = this.status.y + this.status.height + 10;
     }
 
     setCursorStyle(cursorStyle)
@@ -355,9 +376,17 @@ class Client extends EventEmitter
         
         // Update the status
         this.status.text = 'Playing ' + cardName(card) + ' - click on the board to draw, starting on your own color!';
+        this.cancel.visible = true;
+
+        let endCancel = () =>
+        {
+            this.cancel.visible = false;
+            this.removeAllListeners('cancel');
+        }
 
         // Set the card's event listener
         let listener = null;
+        let onCancel = () => { this.off('boardClick', listener); }; // default cancel handler, some are more complicated
         switch (card.type)
         {
             // Single-click cards with no special visualization
@@ -388,6 +417,7 @@ class Client extends EventEmitter
                     {
                         return;
                     }
+                    endCancel();
                     this.off('boardClick', listener);
                     this.beginPreview();
 
@@ -423,6 +453,7 @@ class Client extends EventEmitter
                     {
                         return;
                     }
+                    endCancel();
                     this.off('boardClick', listener);
                     this.beginPreview();
 
@@ -548,10 +579,21 @@ class Client extends EventEmitter
                 break;
         }
         this.on('boardClick', listener);
+
+        this.on('cancel', () =>
+        {
+            onCancel();
+            this.status.text = 'Your turn - play a card!'
+            this.players[game.currentPlayer].setEnabled(true);
+            this.cancel.visible = false;
+        });
     }
 
     playAction(action)
     {
+        this.removeAllListeners('cancel');
+        this.cancel.visible = false;
+
         // Tell both the local and remove game about the action
         game.play(action);
         if (!this.isLocalGame())
@@ -646,6 +688,7 @@ class Client extends EventEmitter
         
         let onBoard = (point.x >= 0 && point.x < game.size && point.y >= 0 && point.y < game.size);
         this.cursor.visible = onBoard;
+        this.previewCursor.visible = onBoard;
 
         let playPosition = this.getPlayPosition(point);
         if (playPosition == null)
