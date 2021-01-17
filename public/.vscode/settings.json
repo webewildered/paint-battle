@@ -1,0 +1,6 @@
+{
+    "search.exclude": {
+        "**/bundle.js": true,
+        "**/testbundle.js": true
+    }
+}

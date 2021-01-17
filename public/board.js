@@ -34,6 +34,7 @@ class Board
 
     //
     // Iterators
+    // These are constant functions that call a user function f for each pixel on the board satisfying some condition
     //
 
     // Calls f(i) for each pixel
@@ -45,7 +46,7 @@ class Board
         }
     }
 
-    // calls f(u, v) for each pixel (u, v) with ||(x, y) - (u, v)|| <= r
+    // Calls f(u, v) for each pixel (u, v) with ||(x, y) - (u, v)|| <= r
     circlef(x, y, r, f)
     {
         let p = Math.floor(r);
@@ -179,6 +180,38 @@ class Board
         }
     }
 
+    // Calls f(u, v) for every pixel reachable through a series of horizontal and vertical steps from (x, y) such that f returns true for every
+    // other pixel on the path.  f() is never called more than once for the same pixel.
+    floodf(x, y, f)
+    {
+        let visited = this.buffer();
+        visited.clear(0);
+        
+        let a = [{x:x, y:y}];
+        let visit = (u, v) =>
+        {
+            if (visited.get(u, v) == 0)
+            {
+                visited.set(u, v, 1);
+                a.push({x:u, y:v});
+            }
+        }
+
+        while (a.length)
+        {
+            let point = a.pop();
+            let u = point.x;
+            let v = point.y;
+            if (f(u, v))
+            {
+                visit(u - 1, v);
+                visit(u + 1, v);
+                visit(u, v - 1);
+                visit(u, v + 1);
+            }
+        }
+    }
+
     //
     // Drawing
     //
@@ -289,58 +322,39 @@ class Board
         }
     }
 
-    // Copies the continuous region of pixels with color c containing (x, y) from src, setting all other pixels to off.
-    // A pixel is reachable from neighbors in the four cardinal directions.  If this.get(x, y) != c, then the region is empty.
-    isolate(x, y, c, off, src)
+    // Copies the continuous (by cardinal movement) c-colored region of src containing (x, y) to this
+    drawFlood(src, x, y, c)
     {
-        this.clear(off);
-        if (src.get(x, y) != c)
+        src.floodf(x, y, (u, v) =>
         {
-            return;
-        }
-
-        let a = [{x:x, y:y}];
-        let self = this;
-        function visit(u, v)
-        {
-            if (src.get(u, v) == c && self.get(u, v) == off)
+            if (src.get(u, v) == c)
             {
-                a.push({x:u, y:v});
+                this.set(u, v, c);
+                return true;
             }
-        }
-
-        while (a.length)
-        {
-            let point = a.pop();
-            let u = point.x;
-            let v = point.y;
-            this.set(u, v, c);
-
-            visit(u - 1, v);
-            visit(u + 1, v);
-            visit(u, v - 1);
-            visit(u, v + 1);
-        }
+            return false;
+        });
     }
 
     // Sets every pixel to color c that is within r pixels of the continuous region of color c containing (x, y).
-    // The continuous region is determined by isolate().  The distances of pixels from that region are determined by
+    // The continuous region is determined by flood().  The distances of pixels from that region are determined by
     // movement in the 8 cardinal + ordinal directions, a rough approximation of euclidean distance.
-    flood(x, y, r, c)
+    grow(x, y, r, c)
     {
         if (this.get(x, y) != c)
         {
             return false;
         }
 
-        // Create a board with the isolated region
+        // Create a board with the flooded region
         let off = c + 1; // just need any value other than c
-        let isoBoard = new Board(this.width, this.height);
-        isoBoard.isolate(x, y, c, off, this);
-
-        // Create a board to draw the flood fill to, initially blank
         let floodBoard = new Board(this.width, this.height);
         floodBoard.clear(off);
+        floodBoard.drawFlood(this, x, y, c);
+
+        // Create a board to draw the grow fill to, initially blank
+        let growBoard = new Board(this.width, this.height);
+        growBoard.clear(off);
         
         // Queue for dijkstra's algorithm 
         let queue = new PriorityQueue({ comparator: function(a, b) { return a.cost - b.cost; }}); // lower cost -> higher priority
@@ -348,9 +362,9 @@ class Board
 
         function visit(u, v, cost)
         {
-            if (floodBoard.get(u, v) == off)
+            if (growBoard.get(u, v) == off)
             {
-                if (isoBoard.get(u, v) == c)
+                if (floodBoard.get(u, v) == c)
                 {
                     cost = 0;
                 } 
@@ -369,12 +383,12 @@ class Board
             let v = item.y;
             let cost = item.cost;
 
-            if (floodBoard.get(u, v) == c)
+            if (growBoard.get(u, v) == c)
             {
                 continue;
             }
 
-            floodBoard.set(u, v, c);
+            growBoard.set(u, v, c);
             visit(u + 1, v + 0, cost + 1);
             visit(u + 1, v + 1, cost + sqrt2);
             visit(u + 0, v + 1, cost + 1);
@@ -385,8 +399,8 @@ class Board
             visit(u + 1, v - 1, cost + sqrt2);
         }
 
-        // Copy the flooded pixels to this
-        this.add(floodBoard, c);
+        // Copy the grown pixels to this
+        this.add(growBoard, c);
     }
 
     // Sets pixels on the borders of regions of mask-colored pixels on board to on, and all other pixels to off
@@ -711,9 +725,16 @@ class Board
         this.allf((i) => { this.data[i] = src.data[i]; });
     }
 
+    // Returns a new board with the same dimensions as this
+    buffer()
+    {
+        return new Board(this.width, this.height);
+    }
+
+    // Returns a copy of this
     clone()
     {
-        let board = new Board(this.width, this.height);
+        let board = this.buffer();
         board.copy(this);
         return board;
     }

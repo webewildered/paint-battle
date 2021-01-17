@@ -38,7 +38,7 @@ class Game extends EventEmitter
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.BOX, width: 45, height: 21, name: 'Box' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.BOX, width: 21, height: 45, name: 'Box' }));
         this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.LINE, pixels: 140, name: 'Line' }));
-        this.deck = this.deck.concat(Array(countMed).fill({ type: CardType.FILL, radius: 4, name: 'Grow' }));
+        this.deck = this.deck.concat(Array(countMed).fill({ type: CardType.GROW, radius: 4, name: 'Grow' }));
         this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.PAINT, radius: 4, pixels: 600, name: 'Brush' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 3, radius: 25.5, angle: 0.2, name: 'Polygon' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 5, radius: 23.5, angle: 0.4, name: 'Polygon' }));
@@ -202,12 +202,12 @@ class Game extends EventEmitter
                 }
                 this.board.add(paintBoard, this.currentPlayer);
                 break;
-            case CardType.FILL:
+            case CardType.GROW:
                 if (!this.startOk(action.x, action.y))
                 {
                     throw 'Game.play() failed';
                 }
-                this.board.flood(action.x, action.y, card.radius, this.currentPlayer);
+                this.board.grow(action.x, action.y, card.radius, this.currentPlayer);
                 break;
             case CardType.DYNAMITE:
                 if (!this.startOk(action.x, action.y))

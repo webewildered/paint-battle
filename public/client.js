@@ -513,17 +513,18 @@ class Client extends EventEmitter
                 }
                 break;
 
-            // Fill - single click with visualization of the range that will be extended
-            case CardType.FILL:
+            // Grow - single click with visualization of the range that will be extended
+            case CardType.GROW:
                 this.beginPreview();
 
                 // Update the visualization each frame to show the line to the current mouse position
                 let update = () =>
                 {
                     let point = this.getBoardPosition();
-                    let isoBoard = new Board(this.overlayBoard.width, this.overlayBoard.height);
-                    isoBoard.isolate(point.x, point.y, game.currentPlayer, this.palette.length - 1, game.board);
-                    this.overlayBoard.outline(game.currentPlayer, 0, this.previewPalette.length - 1, isoBoard);
+                    let floodBoard = this.overlayBoard.buffer();
+                    floodBoard.clear(this.palette.length - 1);
+                    floodBoard.drawFlood(game.board, point.x, point.y, game.currentPlayer);
+                    this.overlayBoard.outline(game.currentPlayer, 0, this.previewPalette.length - 1, floodBoard);
                     this.updateOverlayBoard();
                 }
                 app.ticker.add(update);
