@@ -164,7 +164,19 @@ class Game extends EventEmitter
                 {
                     throw 'Game.play() failed';
                 }
-                this.board.drawPoly(action.x, action.y, card.sides, card.radius, card.angle, this.currentPlayer);
+                let temp = this.board.buffer();
+                temp.clear(0);
+                temp.drawPoly(action.x, action.y, card.sides, card.radius, card.angle, 1);
+                temp.floodf(action.x, action.y, (u, v) =>
+                {
+                    let c = this.board.get(u, v);
+                    if (temp.get(u, v) == 1 && (c == this.currentPlayer || c == this.players.length))
+                    {
+                        this.board.set(u, v, this.currentPlayer);
+                        return true;
+                    }
+                    return false;
+                });
                 break;
             case CardType.LINE:
                 if (!this.startOk(action.x, action.y) || action.x2 == null || action.y2 == null)

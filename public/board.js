@@ -180,36 +180,94 @@ class Board
         }
     }
 
-    // Calls f(u, v) for every pixel reachable through a series of horizontal and vertical steps from (x, y) such that f returns true for every
-    // other pixel on the path.  f() is never called more than once for the same pixel.
-    floodf(x, y, f)
+    // Uses Dijkstra's algorithm to call f(u, v) on pixels in distance order
+    dijkstraf(x, y, maxCost, f)
     {
+        // Buffer tracking whether each pixel has been visited.  0 = no, 1 = yes
         let visited = this.buffer();
         visited.clear(0);
         
-        let a = [{x:x, y:y}];
-        let visit = (u, v) =>
+        // Visit pixels in cost order
+        let queue = new PriorityQueue({ comparator: function(a, b) { return a.cost - b.cost; }}); // lower cost -> higher priority
+        queue.queue({x:x, y:y, cost:0});
+        while (queue.length)
         {
+            let item = queue.dequeue();
+            let u = item.x;
+            let v = item.y;
             if (visited.get(u, v) == 0)
             {
                 visited.set(u, v, 1);
-                a.push({x:u, y:v});
+                f(u, v, (u, v, cost) =>
+                {
+                    cost += item.cost;
+                    if (cost < maxCost)
+                    {
+                        queue.queue({x:u, y:v, cost:cost});
+                    }
+                });
             }
         }
+    }
 
-        while (a.length)
+    // Flood fill - calls f(u, v) for every pixel reachable through a series of horizontal and vertical steps from (x, y) such that f returns true for every
+    // other pixel on the path.  f() is never called more than once for the same pixel.
+    floodf(x, y, f)
+    {
+        this.dijkstraf(x, y, Infinity, (u, v, visit) =>
         {
-            let point = a.pop();
-            let u = point.x;
-            let v = point.y;
             if (f(u, v))
             {
-                visit(u - 1, v);
-                visit(u + 1, v);
-                visit(u, v - 1);
-                visit(u, v + 1);
+                // Visit neighbors in all cardinal directions
+                visit(u - 1, v, 1);
+                visit(u + 1, v, 1);
+                visit(u, v - 1, 1);
+                visit(u, v + 1, 1);
             }
+        })
+    }
+
+    // Sets every pixel to color c that is within r pixels of the continuous region of color c containing (x, y).
+    // The continuous region is determined by flood().  The distances of pixels from that region are determined by
+    // movement in the 8 cardinal + ordinal directions, a rough approximation of euclidean distance.
+    grow(x, y, r, c)
+    {
+        // Grow must start on a pixel of color c
+        if (this.get(x, y) != c)
+        {
+            return;
         }
+
+        // Copy the flood fill of c at (x, y) to a board
+        let off = c + 1; // just need any value other than c
+        let floodBoard = new Board(this.width, this.height);
+        floodBoard.clear(off);
+        floodBoard.drawFlood(this, x, y, c);
+
+        // Create a board to draw the grow fill to, initially blank
+        let growBoard = new Board(this.width, this.height);
+        growBoard.clear(off);
+
+        // Search outwards from the flooded region
+        let sqrt2 = Math.sqrt(2);
+        this.dijkstraf(x, y, r, (u, v, visit) =>
+        {
+            // Draw the pixel
+            this.set(u, v, c);
+
+            // Move through the flood region for free
+            let visit2 = (u, v, cost) => visit(u, v, floodBoard.get(u, v) == c ? 0 : cost);
+            
+            // Visit neighbors in cardinal + diagonal directions
+            visit2(u + 1, v + 0, 1);
+            visit2(u + 1, v + 1, sqrt2);
+            visit2(u + 0, v + 1, 1);
+            visit2(u - 1, v + 1, sqrt2);
+            visit2(u - 1, v + 0, 1);
+            visit2(u - 1, v - 1, sqrt2);
+            visit2(u + 0, v - 1, 1);
+            visit2(u + 1, v - 1, sqrt2);
+        });
     }
 
     //
@@ -334,73 +392,6 @@ class Board
             }
             return false;
         });
-    }
-
-    // Sets every pixel to color c that is within r pixels of the continuous region of color c containing (x, y).
-    // The continuous region is determined by flood().  The distances of pixels from that region are determined by
-    // movement in the 8 cardinal + ordinal directions, a rough approximation of euclidean distance.
-    grow(x, y, r, c)
-    {
-        if (this.get(x, y) != c)
-        {
-            return false;
-        }
-
-        // Create a board with the flooded region
-        let off = c + 1; // just need any value other than c
-        let floodBoard = new Board(this.width, this.height);
-        floodBoard.clear(off);
-        floodBoard.drawFlood(this, x, y, c);
-
-        // Create a board to draw the grow fill to, initially blank
-        let growBoard = new Board(this.width, this.height);
-        growBoard.clear(off);
-        
-        // Queue for dijkstra's algorithm 
-        let queue = new PriorityQueue({ comparator: function(a, b) { return a.cost - b.cost; }}); // lower cost -> higher priority
-        queue.queue({x:x, y:y, cost:0});
-
-        function visit(u, v, cost)
-        {
-            if (growBoard.get(u, v) == off)
-            {
-                if (floodBoard.get(u, v) == c)
-                {
-                    cost = 0;
-                } 
-                if (cost <= r)
-                {
-                    queue.queue({x:u, y:v, cost:cost});
-                }
-            }
-        }
-
-        let sqrt2 = Math.sqrt(2);
-        while (queue.length)
-        {
-            let item = queue.dequeue();
-            let u = item.x;
-            let v = item.y;
-            let cost = item.cost;
-
-            if (growBoard.get(u, v) == c)
-            {
-                continue;
-            }
-
-            growBoard.set(u, v, c);
-            visit(u + 1, v + 0, cost + 1);
-            visit(u + 1, v + 1, cost + sqrt2);
-            visit(u + 0, v + 1, cost + 1);
-            visit(u - 1, v + 1, cost + sqrt2);
-            visit(u - 1, v + 0, cost + 1);
-            visit(u - 1, v - 1, cost + sqrt2);
-            visit(u + 0, v - 1, cost + 1);
-            visit(u + 1, v - 1, cost + sqrt2);
-        }
-
-        // Copy the grown pixels to this
-        this.add(growBoard, c);
     }
 
     // Sets pixels on the borders of regions of mask-colored pixels on board to on, and all other pixels to off
