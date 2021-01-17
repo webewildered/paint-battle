@@ -100,7 +100,7 @@ class Game extends EventEmitter
         {
             let x = Math.floor(center + Math.cos(i * Math.PI * 2 / numPlayers) * this.size / 3);
             let y = Math.floor(center + Math.sin(i * Math.PI * 2 / numPlayers) * this.size / 3);
-            this.board.circle(x, y, 8.5, i);
+            this.board.drawCircle(x, y, 8.5, i);
         }
 
         this.emit('updateBoard');
@@ -150,28 +150,28 @@ class Game extends EventEmitter
                     throw 'Game.play() failed';
                 }
                 let color = (card.type == CardType.CIRCLE) ? this.currentPlayer : this.players.length;
-                this.board.circle(action.x, action.y, card.radius, color);
+                this.board.drawCircle(action.x, action.y, card.radius, color);
                 break;
             case CardType.BOX:
                 if (!this.startOk(action.x, action.y))
                 {
                     throw 'Game.play() failed';
                 }
-                this.board.box(action.x, action.y, card.width, card.height, this.currentPlayer);
+                this.board.drawBox(action.x, action.y, card.width, card.height, this.currentPlayer);
                 break;
             case CardType.POLY:
                 if (!this.startOk(action.x, action.y))
                 {
                     throw 'Game.play() failed';
                 }
-                this.board.poly(action.x, action.y, card.sides, card.radius, card.angle, this.currentPlayer);
+                this.board.drawPoly(action.x, action.y, card.sides, card.radius, card.angle, this.currentPlayer);
                 break;
             case CardType.LINE:
                 if (!this.startOk(action.x, action.y) || action.x2 == null || action.y2 == null)
                 {
                     throw 'Game.play() failed';
                 }
-                this.board.line(action.x, action.y, action.x2, action.y2, card.pixels, this.currentPlayer);
+                this.board.drawLine(action.x, action.y, action.x2, action.y2, card.pixels, this.currentPlayer);
                 break;
             case CardType.PAINT:
                 if (action.points == null || action.points.length == 0 || action.points.length > card.pixels || !this.startOk(action.points[0].x, action.points[0].y))

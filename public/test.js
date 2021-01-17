@@ -31,8 +31,8 @@ $(function()
 
     let board = new Board(299, 299);
     board.clear(e);
-    //board.circle(149, 149, 25.5, c);
-    board.box(149, 149, 50, 30, c);
+    //board.drawCircle(149, 149, 25.5, c);
+    board.drawBox(149, 149, 50, 30, c);
 
     let scale = 2;
     let sprite = new PIXI.Sprite;

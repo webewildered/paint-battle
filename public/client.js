@@ -95,13 +95,13 @@ function renderCard(card, on, off, minSize = 0)
         case CardType.CIRCLE:
         case CardType.PAINT:
         case CardType.ERASER:
-            board.circle(x, y, card.radius, on);
+            board.drawCircle(x, y, card.radius, on);
             break;
         case CardType.BOX:
-            board.box(x, y, w, h, on);
+            board.drawBox(x, y, w, h, on);
             break;
         case CardType.POLY:
-            board.poly(x, y, card.sides, card.radius, card.angle, on);
+            board.drawPoly(x, y, card.sides, card.radius, card.angle, on);
             break;
     }
 
@@ -426,7 +426,7 @@ class Client extends EventEmitter
                     {
                         let point2 = this.getBoardPosition();
                         this.overlayBoard.clear(this.previewPalette.length - 1);
-                        this.overlayBoard.line(point.x, point.y, point2.x, point2.y, card.pixels, 0);
+                        this.overlayBoard.drawLine(point.x, point.y, point2.x, point2.y, card.pixels, 0);
                         this.updateOverlayBoard();
                     }
                     app.ticker.add(update);
@@ -662,7 +662,7 @@ class Client extends EventEmitter
         // Create a crosshair cursor
         let cursorBoard = new Board(crossSize, crossSize);
         cursorBoard.clear(this.previewPalette.length - 1);
-        cursorBoard.crosshair(Math.floor(cursorBoard.width / 2), Math.floor(cursorBoard.height / 2), crossRadius, 0);
+        cursorBoard.drawCross(Math.floor(cursorBoard.width / 2), Math.floor(cursorBoard.height / 2), crossRadius, 0);
         this.cursor = new PIXI.Sprite(rtt(cursorBoard, scale, this.previewPalette));
         this.boardSprite.addChild(this.cursor);
 

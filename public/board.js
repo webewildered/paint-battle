@@ -217,7 +217,7 @@ class Board
     //
     
     // Draw a circle of color c centered at (x, y) with radius r
-    circle(x, y, r, c)
+    drawCircle(x, y, r, c)
     {
         this.circlef(x, y, r, (u, v) =>
         {
@@ -226,7 +226,7 @@ class Board
     }
     
     // Draw a box of color c centered at x, y with dimensions w, h
-    box(x, y, w, h, c)
+    drawBox(x, y, w, h, c)
     {
         let halfW = Math.floor((w - 1) / 2);
         let halfH = Math.floor((h - 1) / 2);
@@ -240,7 +240,7 @@ class Board
     }
     
     // Draw a regular polygon of color c inscribed in the circle centered at x, y with radius r, oriented with angle a
-    poly(x, y, s, r, a, c)
+    drawPoly(x, y, s, r, a, c)
     {
         // Point (u, v) is on the plane if au + bv + c = 0
         // Planes are the infinite lines that the edges of the polygon lie on
@@ -269,7 +269,7 @@ class Board
     }
     
     // Draw a 1-pixel line of color c, from the center of (x, y) to the center of (ex, ey) or until it reaches p pixels.
-    line(x, y, ex, ey, p, c, board)
+    drawLine(x, y, ex, ey, p, c, board)
     {
         const clamp = false;
         const single = false;
@@ -309,8 +309,8 @@ class Board
         return p;
     }
     
-    // Draw a crosshaircentered at (x, y) with radius r and color c
-    crosshair(x, y, r, c)
+    // Draw a crosshair centered at (x, y) with radius r and color c
+    drawCross(x, y, r, c)
     {
         for (let u = Math.max(-r, -x); u <= Math.min(r, this.width - 1 - x); u++)
         {
@@ -498,214 +498,6 @@ class Board
             }
             return true;
         }
-    }
-
-    // Particle sim dynamite method -- too slow
-    dynamite2(x, y, r, e)
-    {
-        // Helper for applying particle repulsion forces in a pair of cells.  cell0 may equal cell1.
-        function force(cell0, cell1, h)
-        {
-            const repulsionDistance = (cell0 == cell1) ? Math.sqrt(2) : 1;
-            const repulsionForce = 100;
-
-            // For each pair of particles
-            for (let i = 0; i < cell0.length; i++)
-            {
-                let p = cell0[i];
-                for (let j = 0; j < cell1.length; j++)
-                {
-                    let q = cell1[j];
-                    if (p == q)
-                    {
-                        continue; // no self-force
-                    }
-
-                    // Calculate distance between the particles and check if they're close enough to apply a repulsion force
-                    let dx = p.x - q.x;
-                    let dy = p.y - q.y;
-                    let dSq = dx * dx + dy * dy;
-                    if (dSq < repulsionDistance * repulsionDistance)
-                    {
-                        let d = Math.sqrt(dSq);
-                
-                        // Calculate the unit direction
-                        // Special case to (1, 0) if the particle is exactly on the center
-                        if (d == 0)
-                        {
-                            dx = 1;
-                            dy = 0;
-                        }
-                        else
-                        {
-                            let invD = 1 / d;
-                            dx *= invD;
-                            dy *= invD;
-                        }
-
-                        // Apply explosive force to the particles
-                        let dv = Math.sqrt(repulsionDistance - d) * repulsionForce * h * 0.5;
-                        p.vx += dx * dv;
-                        p.vy += dy * dv;
-                        q.vx -= dx * dv;
-                        q.vy -= dy * dv;
-                    }
-                }
-            }
-        }
-        
-        // Convert pixels to particles
-        let particles = new Array(this.data.length);
-        let particles2 = new Array(this.data.length); // backbuffer
-        let maxValue = e;
-        for (let i = 0; i < this.data.length; i++)
-        {
-            let c = this.data[i];
-            if (c == e)
-            {
-                particles[i] = [];
-            }
-            else
-            {
-                maxValue = Math.max(maxValue, c);
-                particles[i] = [{x: i % this.width + 0.5, y: Math.floor(i / this.width) + 0.5, vx: 0, vy: 0, c: c }];
-            }
-            particles2[i] = [];
-        }
-
-        // Simulate
-        const h = 1 / 100;
-        const steps = 100;
-        const explosionSteps = 10;
-        const explosionForce = 100;
-        for (let step = 0; step < steps; step++)
-        {
-            // Apply explosive force to all particles
-            if (step < explosionSteps)
-            {
-                // Explosion force starts high and scales down
-                let f = explosionForce * (1 - step / explosionSteps);
-
-                // For each cell within the explosion radius
-                this.circlef(x, y, r, (u, v) =>
-                {
-                    // For each particle in the cell
-                    let i = this.getIndex(u, v);
-                    for (let j = 0; j < particles[i].length; j++)
-                    {
-                        // Calculate the particle's distance from the explosion center and check if it's within the radius
-                        let p = particles[i][j];
-                        let dx = p.x - x;
-                        let dy = p.y - y;
-                        let d = Math.sqrt(dx * dx + dy * dy);
-                        if (d < r)
-                        {
-                            // Calculate the unit direction from the explosion center
-                            // Special case to (1, 0) if the particle is exactly on the center
-                            if (d == 0)
-                            {
-                                dx = 1;
-                                dy = 0;
-                            }
-                            else
-                            {
-                                let invD = 1 / d;
-                                dx *= invD;
-                                dy *= invD;
-                            }
-
-                            // Apply explosive force to the particle
-                            let dv = Math.sqrt(r - d) * f * h;
-                            p.vx += dx * dv;
-                            p.vy += dy * dv;
-                        }
-                    }
-                });
-            }
-
-            // Apply forces between particles and integrate them into the backbuffer
-            for (let u = 0; u < this.width; u++)
-            {
-                for (let v = 0; v < this.height; v++)
-                {
-                    // Apply forces within the cell
-                    let i = this.getIndex(u, v)
-                    force(particles[i], particles[i], h);
-
-                    // Apply forces to neighboring cells
-                    let du = (u != this.width - 1);
-                    let dv = (v != this.height - 1);
-                    if (du)
-                    {
-                        force(particles[i], particles[i + 1], h);
-                        if (dv)
-                        {
-                            force(particles[i], particles[i + 1 + this.height], h);
-                        }
-                    }
-                    if (dv)
-                    {
-                        force(particles[i], particles[i + this.height], h);
-                    }
-
-                    // Integrate
-                    for (let j = 0; j < particles[i].length; j++)
-                    {
-                        let p = particles[i][j]
-                        p.x += p.vx * h;
-                        p.y += p.vy * h;
-                        let pu = Math.floor(p.x);
-                        let pv = Math.floor(p.y);
-                        if (pu >= 0 && pu < this.width && pv >= 0 && pv < this.height)
-                        {
-                            particles2[this.getIndex(pu, pv)].push(p);
-                        } // else particle is off the board and will be removed
-                    }
-                }
-            }
-
-            // Swap buffers and clear the backbuffer
-            let temp = particles;
-            particles = particles2;
-            particles2 = temp;
-            for (let i = 0; i < particles2.length; i++)
-            {
-                particles2[i].length = 0;
-            }
-        }
-
-        // Render particles back to the board
-        let lost = 0;
-        for (let i = 0; i < particles.length; i++)
-        {
-            let c = e;
-            if (particles[i].length == 1)
-            {
-                // Single particle in the cell, take its color
-                c = particles[i][0].c;
-            }
-            else if (particles[i].length > 1)
-            {
-                lost += particles[i].length - 1;
-                // Find what color has the most particles in this cell
-                // (In the future maybe consider some biasing in case of ties for fairness, might not be needed though).
-                let count = new Array(maxValue + 1).fill(0);
-                let maxCount = 0;
-                for (let j = 0; j < particles[i].length; j++)
-                {
-                    let pc = particles[i][j].c;
-                    count[pc]++;
-                    if (count[pc] > maxCount)
-                    {
-                        maxCount = count[pc];
-                        c = pc;
-                    }
-                }
-            } // else c = e because the cell is empty
-
-            this.data[i] = c;
-        }
-        console.log("lost " + lost);
     }
 
     //
