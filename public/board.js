@@ -180,10 +180,9 @@ class Board
         }
     }
 
-    // Returns a function that will execute dijkstraf() in steps.
-    // The first time the step function is called it reaches pixels at a distance of 1, the next time a distance of 2, etc.
-    // The step function returns false when it is complete.
-    dijkstrafStep(x, y, maxCost, minStepCost, f)
+    // Returns a function that will execute dijkstraf() in steps, increasing the maximum cost each time it is called by a
+    // delta that you pass in (defaults to 1).  The step function returns false when it is complete.
+    dijkstrafStep(x, y, maxCost, f)
     {
         // Buffer tracking whether each pixel has been visited.  0 = no, 1 = yes
         let visited = this.buffer();
@@ -194,12 +193,13 @@ class Board
         queue.queue({x:x, y:y, cost:0});
 
         // Return a stepping function
-        let maxCost = 0;
-        return () =>
+        let stepCost = 0;
+        return (deltaCost = 1) =>
         {
+            stepCost += deltaCost;
             while (queue.length)
             {
-                if (queue.peek().cost > maxCost)
+                if (queue.peek().cost > stepCost)
                 {
                     return true;
                 }
@@ -224,51 +224,37 @@ class Board
         }
     }
 
-    // Uses Dijkstra's algorithm to call f(u, v) on pixels in distance order
+    // Dijstra's algorithm.  Visits pixels starting from (x, y) in order by cost and calls f() at each one.
+    // f(u, v, addNeighbor) receives the coordinates of the visited pixel and a function addNeighbor(u, v, cost)
+    // which can be used to specify neighboring pixels and the cost to reach them from the current one.  f is
+    // never called more than once for the same pixel.
     dijkstraf(x, y, maxCost, f)
     {
-        // Buffer tracking whether each pixel has been visited.  0 = no, 1 = yes
-        let visited = this.buffer();
-        visited.clear(0);
-        
-        // Visit pixels in cost order
-        let queue = new PriorityQueue({ comparator: function(a, b) { return a.cost - b.cost; }}); // lower cost -> higher priority
-        queue.queue({x:x, y:y, cost:0});
-        while (queue.length)
+        this.dijkstrafStep(x, y, maxCost, f)(maxCost);
+    }
+
+    // Returns a function that will execute floodf() in steps.
+    // Works the same as dijkstrafStep().
+    floodfStep(x, y, f)
+    {
+        return this.dijkstrafStep(x, y, Infinity, (u, v, addNeighbor) =>
         {
-            let item = queue.dequeue();
-            let u = item.x;
-            let v = item.y;
-            if (visited.get(u, v) == 0)
+            if (f(u, v))
             {
-                visited.set(u, v, 1);
-                f(u, v, (u, v, cost) =>
-                {
-                    cost += item.cost;
-                    if (cost < maxCost)
-                    {
-                        queue.queue({x:u, y:v, cost:cost});
-                    }
-                });
+                // Visit neighbors in all cardinal directions
+                addNeighbor(u - 1, v, 1);
+                addNeighbor(u + 1, v, 1);
+                addNeighbor(u, v - 1, 1);
+                addNeighbor(u, v + 1, 1);
             }
-        }
+        });
     }
 
     // Flood fill - calls f(u, v) for every pixel reachable through a series of horizontal and vertical steps from (x, y) such that f returns true for every
     // other pixel on the path.  f() is never called more than once for the same pixel.
     floodf(x, y, f)
     {
-        this.dijkstraf(x, y, Infinity, (u, v, visit) =>
-        {
-            if (f(u, v))
-            {
-                // Visit neighbors in all cardinal directions
-                visit(u - 1, v, 1);
-                visit(u + 1, v, 1);
-                visit(u, v - 1, 1);
-                visit(u, v + 1, 1);
-            }
-        })
+        this.floodfStep(x, y, f)(Infinity);
     }
 
     // Sets every pixel to color c that is within r pixels of the continuous region of color c containing (x, y).
@@ -294,23 +280,23 @@ class Board
 
         // Search outwards from the flooded region
         let sqrt2 = Math.sqrt(2);
-        this.dijkstraf(x, y, r, (u, v, visit) =>
+        this.dijkstraf(x, y, r, (u, v, addNeighbor) =>
         {
             // Draw the pixel
             this.set(u, v, c);
 
             // Move through the flood region for free
-            let visit2 = (u, v, cost) => visit(u, v, floodBoard.get(u, v) == c ? 0 : cost);
+            let addNeighbor2 = (u, v, cost) => addNeighbor(u, v, floodBoard.get(u, v) == c ? 0 : cost);
             
             // Visit neighbors in cardinal + diagonal directions
-            visit2(u + 1, v + 0, 1);
-            visit2(u + 1, v + 1, sqrt2);
-            visit2(u + 0, v + 1, 1);
-            visit2(u - 1, v + 1, sqrt2);
-            visit2(u - 1, v + 0, 1);
-            visit2(u - 1, v - 1, sqrt2);
-            visit2(u + 0, v - 1, 1);
-            visit2(u + 1, v - 1, sqrt2);
+            addNeighbor2(u + 1, v + 0, 1);
+            addNeighbor2(u + 1, v + 1, sqrt2);
+            addNeighbor2(u + 0, v + 1, 1);
+            addNeighbor2(u - 1, v + 1, sqrt2);
+            addNeighbor2(u - 1, v + 0, 1);
+            addNeighbor2(u - 1, v - 1, sqrt2);
+            addNeighbor2(u + 0, v - 1, 1);
+            addNeighbor2(u + 1, v - 1, sqrt2);
         });
     }
 

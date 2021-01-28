@@ -392,7 +392,6 @@ class Client extends EventEmitter
             // Single-click cards with no special visualization
             case CardType.CIRCLE:
             case CardType.BOX:
-            case CardType.POLY:
             case CardType.ERASER:
                 listener = (point) =>
                 {
@@ -404,6 +403,53 @@ class Client extends EventEmitter
 
                     this.off('boardClick', listener);
                     this.playAction({cardId:cardId, x:point.x, y:point.y});
+                    this.clearCursor();
+                }
+                break;
+                
+            case CardType.POLY:
+                listener = (point) =>
+                {
+                    point = this.getPlayPosition(point);
+                    if (point == null)
+                    {
+                        return;
+                    }
+
+                    this.off('boardClick', listener);
+
+                    // Animate the fill
+                    let board = game.board.clone(); // make a copy of the original board
+                    let temp = game.board.buffer();
+                    temp.clear(0);
+                    temp.drawPoly(point.x, point.y, card.sides, card.radius, card.angle, 1);
+                    let step = temp.floodfStep(point.x, point.y, (u, v) =>
+                    {
+                        let c = game.board.get(u, v);
+                        if (temp.get(u, v) == 1 && (c == game.currentPlayer || c == game.players.length))
+                        {
+                            game.board.set(u, v, game.currentPlayer);
+                            return true;
+                        }
+                        return false;
+                    });
+                    let animate = () =>
+                    {
+                        // Step the animation
+                        if (!step())
+                        {
+                            // At the end of the animation: restore the original board, let the game apply the explosion, and end updates
+                            game.board = board;
+                            this.playAction({cardId:cardId, x:point.x, y:point.y});
+                            app.ticker.remove(animate);
+                        }
+
+                        // Update the board, but not the count
+                        const updateCount = false;
+                        this.updateBoard(updateCount);
+                    };
+                    app.ticker.add(animate);
+
                     this.clearCursor();
                 }
                 break;
