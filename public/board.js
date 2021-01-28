@@ -180,6 +180,50 @@ class Board
         }
     }
 
+    // Returns a function that will execute dijkstraf() in steps.
+    // The first time the step function is called it reaches pixels at a distance of 1, the next time a distance of 2, etc.
+    // The step function returns false when it is complete.
+    dijkstrafStep(x, y, maxCost, minStepCost, f)
+    {
+        // Buffer tracking whether each pixel has been visited.  0 = no, 1 = yes
+        let visited = this.buffer();
+        visited.clear(0);
+        
+        // Visit pixels in cost order
+        let queue = new PriorityQueue({ comparator: function(a, b) { return a.cost - b.cost; }}); // lower cost -> higher priority
+        queue.queue({x:x, y:y, cost:0});
+
+        // Return a stepping function
+        let maxCost = 0;
+        return () =>
+        {
+            while (queue.length)
+            {
+                if (queue.peek().cost > maxCost)
+                {
+                    return true;
+                }
+                let item = queue.dequeue();
+                let u = item.x;
+                let v = item.y;
+                if (visited.get(u, v) == 0)
+                {
+                    visited.set(u, v, 1);
+                    f(u, v, (u, v, cost) =>
+                    {
+                        cost += item.cost;
+                        if (cost < maxCost)
+                        {
+                            queue.queue({x:u, y:v, cost:cost});
+                        }
+                    });
+                }
+            }
+            
+            return false;
+        }
+    }
+
     // Uses Dijkstra's algorithm to call f(u, v) on pixels in distance order
     dijkstraf(x, y, maxCost, f)
     {
