@@ -124,7 +124,10 @@ class Game extends EventEmitter
         this.emit('reveal', cardId);
     }
 
-    // returns true on success, false on failure
+    // returns a stepping function. The function must be called repeatedly to step the game
+    // as long as it returns true. Once it returns false, the play is complete.
+    // throws on failure -- this should not happen but might if there is a bug or if a player
+    // is trying to cheat.
     play(action)
     {
         // Make sure the card belongs to the current player
@@ -141,6 +144,7 @@ class Game extends EventEmitter
         }
 
         // Perform the right action for the card
+        let step;
         switch (card.type)
         {
             case CardType.CIRCLE:
@@ -149,15 +153,23 @@ class Game extends EventEmitter
                 {
                     throw 'Game.play() failed';
                 }
-                let color = (card.type == CardType.CIRCLE) ? this.currentPlayer : this.players.length;
-                this.board.drawCircle(action.x, action.y, card.radius, color);
+                step = () =>
+                {
+                    let color = (card.type == CardType.CIRCLE) ? this.currentPlayer : this.players.length;
+                    this.board.drawCircle(action.x, action.y, card.radius, color);
+                    return false;
+                }
                 break;
             case CardType.BOX:
                 if (!this.startOk(action.x, action.y))
                 {
                     throw 'Game.play() failed';
                 }
-                this.board.drawBox(action.x, action.y, card.width, card.height, this.currentPlayer);
+                step = () =>
+                {
+                    this.board.drawBox(action.x, action.y, card.width, card.height, this.currentPlayer);
+                    return false;
+                }
                 break;
             case CardType.POLY:
                 if (!this.startOk(action.x, action.y))
@@ -167,7 +179,7 @@ class Game extends EventEmitter
                 let temp = this.board.buffer();
                 temp.clear(0);
                 temp.drawPoly(action.x, action.y, card.sides, card.radius, card.angle, 1);
-                temp.floodf(action.x, action.y, (u, v) =>
+                step = temp.floodfStep(action.x, action.y, (u, v) =>
                 {
                     let c = this.board.get(u, v);
                     if (temp.get(u, v) == 1 && (c == this.currentPlayer || c == this.players.length))
@@ -183,7 +195,11 @@ class Game extends EventEmitter
                 {
                     throw 'Game.play() failed';
                 }
-                this.board.drawLine(action.x, action.y, action.x2, action.y2, card.pixels, this.currentPlayer);
+                step = () =>
+                {
+                    this.board.drawLine(action.x, action.y, action.x2, action.y2, card.pixels, this.currentPlayer);
+                    return false
+                }
                 break;
             case CardType.PAINT:
                 if (action.points == null || action.points.length == 0 || action.points.length > card.pixels || !this.startOk(action.points[0].x, action.points[0].y))
@@ -197,50 +213,69 @@ class Game extends EventEmitter
                         throw 'Game.play() failed';
                     }
                 }
-                let p = card.pixels;
-                let r = card.radius;
-                let paintBoard = new Board(this.size, this.size);
-                paintBoard.clear(this.players.length);
-                for (let i = 0; i < action.points.length; i++)
+                step = () =>
                 {
-                    if (p <= 0)
+                    let p = card.pixels;
+                    let r = card.radius;
+                    let paintBoard = new Board(this.size, this.size);
+                    paintBoard.clear(this.players.length);
+                    for (let i = 0; i < action.points.length; i++)
                     {
-                        throw 'Game.play() failed'; // too many points
-                    }
+                        if (p <= 0)
+                        {
+                            throw 'Game.play() failed'; // too many points
+                        }
 
-                    let j = Math.max(i - 1, 0);
-                    let p2 = paintBoard.paint(action.points[j].x, action.points[j].y, action.points[i].x, action.points[i].y, r, p, this.currentPlayer);
-                    p = Math.min(p2, p - 1);
+                        let j = Math.max(i - 1, 0);
+                        let p2 = paintBoard.paint(action.points[j].x, action.points[j].y, action.points[i].x, action.points[i].y, r, p, this.currentPlayer);
+                        p = Math.min(p2, p - 1);
+                    }
+                    this.board.add(paintBoard, this.currentPlayer);
+                    return false;
                 }
-                this.board.add(paintBoard, this.currentPlayer);
                 break;
             case CardType.GROW:
                 if (!this.startOk(action.x, action.y))
                 {
                     throw 'Game.play() failed';
                 }
-                this.board.grow(action.x, action.y, card.radius, this.currentPlayer);
+                step = () =>
+                {
+                    this.board.grow(action.x, action.y, card.radius, this.currentPlayer);
+                    return false;
+                }
                 break;
             case CardType.DYNAMITE:
                 if (!this.startOk(action.x, action.y))
                 {
                     throw 'Game.play() failed';
                 }
-                this.board.dynamite(action.x, action.y, card.radius, this.players.length);
+                step = this.board.dynamiteStep(action.x, action.y, card.radius, this.players.length);
                 break;
             default:
                 throw 'Game.play() failed';
         }
 
-        this.emit('updateBoard');
+        // Reveal the card played
         this.emit('reveal', action.cardId);
-        
+            
         // Remove the card from the player's hand
         let player = this.players[this.currentPlayer];
         player.hand.splice(player.hand.indexOf(action.cardId), 1);
         this.emit('play', this.currentPlayer, action.cardId);
 
-        this.nextTurn();
+        // Return a stepper that steps the play until finished, then advances the game
+        return () =>
+        {
+            if (step())
+            {
+                return true;
+            }
+
+            this.emit('updateBoard');
+            this.nextTurn();
+            return false;
+        }
     }
 
     // Handle disconnects

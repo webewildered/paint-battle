@@ -384,6 +384,24 @@ class Client extends EventEmitter
             this.removeAllListeners('cancel');
         }
 
+        let playAction = (action) =>
+        {
+            let step = this.playAction(action);
+            let animate = () =>
+            {
+                // Step the animation
+                let updateCount = false;
+                if (!step())
+                {
+                    // At the end of the animation: update the count and remove from the ticker
+                    updateCount = true;
+                    app.ticker.remove(animate);
+                }
+                this.updateBoard(updateCount);
+            };
+            app.ticker.add(animate);
+        }
+
         // Set the card's event listener
         let listener = null;
         let onCancel = () => { this.off('boardClick', listener); }; // default cancel handler, some are more complicated
@@ -402,7 +420,7 @@ class Client extends EventEmitter
                     }
 
                     this.off('boardClick', listener);
-                    this.playAction({cardId:cardId, x:point.x, y:point.y});
+                    playAction({cardId:cardId, x:point.x, y:point.y});
                     this.clearCursor();
                 }
                 break;
@@ -417,39 +435,7 @@ class Client extends EventEmitter
                     }
 
                     this.off('boardClick', listener);
-
-                    // Animate the fill
-                    let board = game.board.clone(); // make a copy of the original board
-                    let temp = game.board.buffer();
-                    temp.clear(0);
-                    temp.drawPoly(point.x, point.y, card.sides, card.radius, card.angle, 1);
-                    let step = temp.floodfStep(point.x, point.y, (u, v) =>
-                    {
-                        let c = game.board.get(u, v);
-                        if (temp.get(u, v) == 1 && (c == game.currentPlayer || c == game.players.length))
-                        {
-                            game.board.set(u, v, game.currentPlayer);
-                            return true;
-                        }
-                        return false;
-                    });
-                    let animate = () =>
-                    {
-                        // Step the animation
-                        if (!step())
-                        {
-                            // At the end of the animation: restore the original board, let the game apply the explosion, and end updates
-                            game.board = board;
-                            this.playAction({cardId:cardId, x:point.x, y:point.y});
-                            app.ticker.remove(animate);
-                        }
-
-                        // Update the board, but not the count
-                        const updateCount = false;
-                        this.updateBoard(updateCount);
-                    };
-                    app.ticker.add(animate);
-
+                    playAction({cardId:cardId, x:point.x, y:point.y});
                     this.clearCursor();
                 }
                 break;
@@ -483,7 +469,7 @@ class Client extends EventEmitter
                         // 2nd point
                         this.off('boardClick', listener);
                         app.ticker.remove(update);
-                        this.playAction({cardId:cardId, x:point.x, y:point.y, x2:point2.x, y2:point2.y});
+                        playAction({cardId:cardId, x:point.x, y:point.y, x2:point2.x, y2:point2.y});
                         this.endPreview();
                     };
                     this.on('boardClick', listener);
@@ -548,7 +534,7 @@ class Client extends EventEmitter
                         this.updateOverlayBoard();
                 
                         this.onBoardMouseDown = null;
-                        this.playAction({cardId:cardId, points:paintPoints});
+                        playAction({cardId:cardId, points:paintPoints});
                         
                         this.endPreview();
                     }
@@ -585,7 +571,7 @@ class Client extends EventEmitter
                     this.off('boardClick', listener);
                     app.ticker.remove(update);
                     
-                    this.playAction({cardId:cardId, x:point.x, y:point.y});
+                    playAction({cardId:cardId, x:point.x, y:point.y});
                     this.endPreview();
                 }
                 break;
@@ -601,26 +587,8 @@ class Client extends EventEmitter
                     }
 
                     // Animate the explosion
-                    let board = game.board.clone(); // make a copy of the original board
-                    let step = game.board.dynamiteStep(point.x, point.y, card.radius, this.players.length);
-                    let animate = () =>
-                    {
-                        // Step the animation
-                        if (!step())
-                        {
-                            // At the end of the animation: restore the original board, let the game apply the explosion, and end updates
-                            game.board = board;
-                            this.playAction({cardId:cardId, x:point.x, y:point.y});
-                            app.ticker.remove(animate);
-                        }
-
-                        // Update the board, but not the count
-                        const updateCount = false;
-                        this.updateBoard(updateCount);
-                    };
-                    app.ticker.add(animate);
-
                     this.off('boardClick', listener);
+                    playAction({cardId:cardId, x:point.x, y:point.y});
                     this.clearCursor();
                 }
                 break;
@@ -642,11 +610,13 @@ class Client extends EventEmitter
         this.cancel.visible = false;
 
         // Tell both the local and remove game about the action
-        game.play(action);
+        let step = game.play(action);
         if (!this.isLocalGame())
         {
             this.socket.emit('play', action);
         }
+
+        return step;
     }
 
     getPlayPosition(point)

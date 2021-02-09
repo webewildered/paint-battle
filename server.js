@@ -186,9 +186,10 @@ module.exports = function(http)
                         player.socket.removeAllListeners('play');
 
                         // Try to play the action
+                        let step;
                         try
                         {
-                            game.play(action);   
+                            step = game.play(action);
                         }
                         catch (error)
                         {
@@ -198,6 +199,9 @@ module.exports = function(http)
                             return;
                             // TODO -- then what, DC the player?
                         }
+
+                        // Run the action to completion
+                        while (step()) {}
 
                         // Forward the action to the other players
                         action.reveals = reveals;
