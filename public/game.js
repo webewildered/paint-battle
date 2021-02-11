@@ -221,23 +221,41 @@ class Game extends EventEmitter
                 }
                 
                 let p = card.pixels;
-                let r = card.radius;
+                let c = this.currentPlayer;
                 let i = 0;
                 let paintBoard = this.board.buffer(this.players.length);
                 step = () =>
                 {
-                    if (p <= 0)
+                    let paintStep = undefined;
+                    for (let j = 0; j < 5; j++) // 5 steps
                     {
-                        throw 'Game.play() failed'; // too many points
+                        // Call paintStep() to get a function will execute segment i of the paint
+                        if (!paintStep)
+                        {
+                            if (i === action.points.length)
+                            {
+                                break;
+                            }
+                            if (p <= 0)
+                            {
+                                throw 'Game.play() failed'; // too many points
+                            }
+                            let j = Math.max(i - 1, 0);
+                            paintStep = paintBoard.paintStep(action.points[j].x, action.points[j].y, action.points[i].x, action.points[i].y, card.radius, p, c);
+                            i++;
+                        }
+
+                        // Execute one step of the paint
+                        let result = paintStep(1);
+                        if (result)
+                        {
+                            // If the segment is done, update the pixel count and mark paintStep undefined to move to the next segment
+                            paintStep = undefined;
+                            p = Math.min(result, p - 1);
+                        }
                     }
 
-                    // TODO - should break paint() into steps, otherwise this animation can be too fast or slow depending on the number of pixels in a single paint
-                    // call
-                    let j = Math.max(i - 1, 0);
-                    let p2 = paintBoard.paint(action.points[j].x, action.points[j].y, action.points[i].x, action.points[i].y, card.radius, p, this.currentPlayer);
-                    p = Math.min(p2, p - 1);
                     this.board.add(paintBoard, this.currentPlayer);
-                    i++;
                     return (i < action.points.length);
                 }
                 break;

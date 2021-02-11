@@ -382,7 +382,42 @@ class Board
         return this.drawLineStep(x, y, ex, ey, p, c)(Infinity);
     }
     
+    // Returns a stepping function that implements paint
+    // The function takes the number of steps to execute and returns undefined if stepping should continue, or
+    // p minus the number of newly set pixels if stepping is complete
+    paintStep(x, y, ex, ey, r, p, c)
+    {
+        const clamp = true;
+        const single = false;
+        const lineStep = this.linefStep(x, y, ex, ey, clamp, single, (u, v) => 
+        {
+            this.circlef(u, v, r, (u, v) =>
+            {
+                if (this.get(u, v) != c)
+                {
+                    this.set(u, v, c);
+                    p--;
+                }
+            });
+            if (p <= 0)
+            {
+                return false;
+            }
+            return true;
+        });
+
+        return (steps) =>
+        {
+            if (lineStep(steps))
+            {
+                return undefined;
+            }
+            return p;
+        }
+    }
+    
     // Draw a circular brush of radius r and color c along the line from (x, y) to (ex, ey), until the end is reached or the number of newly set pixels reaches p.
+    // Returns p minus the number of newly set pixels
     paint(x, y, ex, ey, r, p, c)
     {
         const clamp = true;
