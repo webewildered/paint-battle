@@ -60,14 +60,7 @@ class Board
         }
     }
     
-    // Calls f for each pixel on a line from (x, y) to (ex, ey).  Terminates if f does not return true.
-    // If clamp is false, the line will terminate when it reaches an edge of the board.
-    // If clamp is true, the line will continue along that edge, terminating only if it is perpendicular to the edge or if it reaches a corner.
-    // If single is false, f is called for every pixel that the line crosses through, so the line is a sequence of horizontal and vertical steps.
-    // If single is true, then whenever the line would take a vertical step after a horizontal one or vice versa, it takes a single diagonal step instead.
-    // Input coordinates are snapped to the middle of each pixel.
-    // TODO - check the perpendicular cases.  Check behavior if the line begins outside of the board (we don't need to support that case, yet)
-    linef(x, y, ex, ey, clamp, single, f)
+    linefStep(x, y, ex, ey, clamp, single, f)
     {
         // Line origin and direction
         let dx = ex - x;
@@ -93,100 +86,104 @@ class Board
         const yDir = single ? 1 : nDir;
         let dir = nDir;
 
-        let i = 0;
-        console.log('line')
-        while (true)
+        return (numSteps) =>
         {
-            // Check if the end of the line was reached
-            if (u == ex && v == ey)
+            while (numSteps > 0)
             {
-                break;
-            }
-
-            if (rx * ady < ry * adx)
-            {
-                // Check for diagonal step
-                if (dir != xDir && dir != nDir)
+                // Check if the end of the line was reached
+                if (u == ex && v == ey)
                 {
-                    // Skip the last pixel
-                    dir = nDir;
-                }
-                else
-                {
-                    if (!f(u, v))
-                    {
-                        break;
-                    }
-                    dir = xDir;
+                    return false;
                 }
 
-                // move in x
-                ry -= rx * adydx;
-                rx = 1;
-                u += idx;
-            
-                // Check for collision with left/right edge
-                if (u < 0 || u >= this.width)
+                if (rx * ady < ry * adx)
                 {
-                    if (clamp && ady != 0)
+                    // Check for diagonal step
+                    if (dir != xDir && dir != nDir)
                     {
-                        u = Math.min(Math.max(u, 0), this.width - 1);
-                        ex = u;
-                        adx = adxdy = adydx = 0;
+                        // Skip the last pixel
+                        dir = nDir;
                     }
                     else
                     {
-                        break;
+                        if (!f(u, v))
+                        {
+                            return false;
+                        }
+                        numSteps--;
+                        dir = xDir;
                     }
-                }
-            }
-            else
-            {
-                // Check for diagonal step
-                if (dir != yDir && dir != nDir)
-                {
-                    // Skip the last pixel
-                    dir = nDir;
+
+                    // move in x
+                    ry -= rx * adydx;
+                    rx = 1;
+                    u += idx;
+                
+                    // Check for collision with left/right edge
+                    if (u < 0 || u >= this.width)
+                    {
+                        if (clamp && ady != 0)
+                        {
+                            u = Math.min(Math.max(u, 0), this.width - 1);
+                            ex = u;
+                            adx = adxdy = adydx = 0;
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
                 }
                 else
                 {
-                    if (!f(u, v))
+                    // Check for diagonal step
+                    if (dir != yDir && dir != nDir)
                     {
-                        break;
-                    }
-                    dir = yDir;
-                }
-                
-                // move in y
-                rx -= ry * adxdy;
-                ry = 1;
-                v += idy;
-                
-                // Check for collision with top/bottom edge
-                if (v < 0 || v >= this.height)
-                {
-                    if (clamp && adx != 0)
-                    {
-                        v = Math.min(Math.max(v, 0), this.height - 1);
-                        ey = v;
-                        ady = adxdy = adydx = 0;
+                        // Skip the last pixel
+                        dir = nDir;
                     }
                     else
                     {
-                        break;
+                        if (!f(u, v))
+                        {
+                            return false;
+                        }
+                        numSteps--;
+                        dir = yDir;
+                    }
+                    
+                    // move in y
+                    rx -= ry * adxdy;
+                    ry = 1;
+                    v += idy;
+                    
+                    // Check for collision with top/bottom edge
+                    if (v < 0 || v >= this.height)
+                    {
+                        if (clamp && adx != 0)
+                        {
+                            v = Math.min(Math.max(v, 0), this.height - 1);
+                            ey = v;
+                            ady = adxdy = adydx = 0;
+                        }
+                        else
+                        {
+                            return false;
+                        }
                     }
                 }
             }
+
+            return true;
         }
     }
-
+    
     // Returns a function that will execute dijkstraf() in steps, increasing the maximum cost each time it is called by a
     // delta that you pass in (defaults to 1).  The step function returns false when it is complete.
     dijkstrafStep(x, y, maxCost, f)
     {
         // Buffer tracking whether each pixel has been visited.  0 = no, 1 = yes
-        let visited = this.buffer();
-        visited.clear(0);
+        let visited = this.buffer(0);
         
         // Visit pixels in cost order
         let queue = new PriorityQueue({ comparator: function(a, b) { return a.cost - b.cost; }}); // lower cost -> higher priority
@@ -257,10 +254,9 @@ class Board
         this.floodfStep(x, y, f)(Infinity);
     }
 
-    // Sets every pixel to color c that is within r pixels of the continuous region of color c containing (x, y).
-    // The continuous region is determined by flood().  The distances of pixels from that region are determined by
-    // movement in the 8 cardinal + ordinal directions, a rough approximation of euclidean distance.
-    grow(x, y, r, c)
+    // Returns a function that will execute grow() in steps.
+    // Works the same as dijkstrafStep().
+    growStep(x, y, r, c)
     {
         // Grow must start on a pixel of color c
         if (this.get(x, y) != c)
@@ -280,7 +276,7 @@ class Board
 
         // Search outwards from the flooded region
         let sqrt2 = Math.sqrt(2);
-        this.dijkstraf(x, y, r, (u, v, addNeighbor) =>
+        return this.dijkstrafStep(x, y, r, (u, v, addNeighbor) =>
         {
             // Draw the pixel
             this.set(u, v, c);
@@ -298,6 +294,14 @@ class Board
             addNeighbor2(u + 0, v - 1, 1);
             addNeighbor2(u + 1, v - 1, sqrt2);
         });
+    }
+
+    // Sets every pixel to color c that is within r pixels of the continuous region of color c containing (x, y).
+    // The continuous region is determined by flood().  The distances of pixels from that region are determined by
+    // movement in the 8 cardinal + ordinal directions, a rough approximation of euclidean distance.
+    grow(x, y, r, c)
+    {
+        this.growStep(x, y, r, c)(Infinity);
     }
 
     //
@@ -356,12 +360,12 @@ class Board
         });
     }
     
-    // Draw a 1-pixel line of color c, from the center of (x, y) to the center of (ex, ey) or until it reaches p pixels.
-    drawLine(x, y, ex, ey, p, c, board)
+    // Returns a stepping function that implements drawLine
+    drawLineStep(x, y, ex, ey, p, c)
     {
         const clamp = false;
         const single = false;
-        this.linef(x, y, ex, ey, clamp, single, (u, v) => 
+        return this.linefStep(x, y, ex, ey, clamp, single, (u, v) => 
         {
             this.set(u, v, c);
             if (--p == 0)
@@ -372,12 +376,18 @@ class Board
         });
     }
     
+    // Draw a 1-pixel line of color c, from the center of (x, y) to the center of (ex, ey) or until it reaches p pixels.
+    drawLine(x, y, ex, ey, p, c)
+    {
+        return this.drawLineStep(x, y, ex, ey, p, c)(Infinity);
+    }
+    
     // Draw a circular brush of radius r and color c along the line from (x, y) to (ex, ey), until the end is reached or the number of newly set pixels reaches p.
-    paint(x, y, ex, ey, r, p, c, board)
+    paint(x, y, ex, ey, r, p, c)
     {
         const clamp = true;
         const single = false;
-        this.linef(x, y, ex, ey, clamp, single, (u, v) => 
+        this.linefStep(x, y, ex, ey, clamp, single, (u, v) => 
         {
             this.circlef(u, v, r, (u, v) =>
             {
@@ -392,7 +402,7 @@ class Board
                 return false;
             }
             return true;
-        });
+        })(Infinity);
 
         return p;
     }
@@ -485,7 +495,7 @@ class Board
 
                 const clamp = true;
                 const single = true;
-                this.linef(x, y, ex, ey, clamp, single, (u, v) =>
+                this.linefStep(x, y, ex, ey, clamp, single, (u, v) =>
                 {
                     let xDiff = u - x;
                     let yDiff = v - y;
@@ -515,7 +525,7 @@ class Board
                         queue.push(c);
                         return true;
                     }
-                });
+                })(Infinity);
             }
             return true;
         }
@@ -539,9 +549,14 @@ class Board
     }
 
     // Returns a new board with the same dimensions as this
-    buffer()
+    buffer(c)
     {
-        return new Board(this.width, this.height);
+        let board = new Board(this.width, this.height);
+        if (c !== undefined)
+        {
+            board.clear(c);
+        }
+        return board;
     }
 
     // Returns a copy of this

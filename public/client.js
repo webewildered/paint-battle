@@ -553,8 +553,7 @@ class Client extends EventEmitter
                 let update = () =>
                 {
                     let point = this.getBoardPosition();
-                    let floodBoard = this.overlayBoard.buffer();
-                    floodBoard.clear(this.palette.length - 1);
+                    let floodBoard = this.overlayBoard.buffer(this.palette.length - 1);
                     floodBoard.drawFlood(game.board, point.x, point.y, game.currentPlayer);
                     this.overlayBoard.outline(game.currentPlayer, 0, this.previewPalette.length - 1, floodBoard);
                     this.updateOverlayBoard();

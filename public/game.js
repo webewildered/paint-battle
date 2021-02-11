@@ -143,62 +143,68 @@ class Game extends EventEmitter
             throw 'Game.play() failed';
         }
 
+        // Returns a stepping function that flood fills the board from x, y with color c, restricted to
+        // pixels that are set to 1 in the mask and that are set to either c or this.players.length on the board
+        let floodMaskStep = (mask, x, y, c) => mask.floodfStep(action.x, action.y, (u, v) =>
+        {
+            let b = this.board.get(u, v);
+            if (mask.get(u, v) == 1 && (b == c || b == this.players.length))
+            {
+                this.board.set(u, v, c);
+                return true;
+            }
+            return false;
+        });
+
         // Perform the right action for the card
         let step;
         switch (card.type)
         {
             case CardType.CIRCLE:
             case CardType.ERASER:
+            {
                 if (!this.startOk(action.x, action.y))
                 {
                     throw 'Game.play() failed';
                 }
-                step = () =>
-                {
-                    let color = (card.type == CardType.CIRCLE) ? this.currentPlayer : this.players.length;
-                    this.board.drawCircle(action.x, action.y, card.radius, color);
-                    return false;
-                }
+                
+                let color = (card.type == CardType.CIRCLE) ? this.currentPlayer : this.players.length;
+                let mask = this.board.buffer(0);
+                mask.drawCircle(action.x, action.y, card.radius, 1);
+                step = floodMaskStep(mask, action.x, action.y, color); // TODO need to rethink eraser
                 break;
+            }
             case CardType.BOX:
+            {
                 if (!this.startOk(action.x, action.y))
                 {
                     throw 'Game.play() failed';
                 }
-                step = () =>
-                {
-                    this.board.drawBox(action.x, action.y, card.width, card.height, this.currentPlayer);
-                    return false;
-                }
+                let mask = this.board.buffer(0);
+                mask.drawBox(action.x, action.y, card.width, card.height, 1);
+                step = floodMaskStep(mask, action.x, action.y, this.currentPlayer);
                 break;
+            }
             case CardType.POLY:
+            {
                 if (!this.startOk(action.x, action.y))
                 {
                     throw 'Game.play() failed';
                 }
-                let temp = this.board.buffer();
-                temp.clear(0);
-                temp.drawPoly(action.x, action.y, card.sides, card.radius, card.angle, 1);
-                step = temp.floodfStep(action.x, action.y, (u, v) =>
-                {
-                    let c = this.board.get(u, v);
-                    if (temp.get(u, v) == 1 && (c == this.currentPlayer || c == this.players.length))
-                    {
-                        this.board.set(u, v, this.currentPlayer);
-                        return true;
-                    }
-                    return false;
-                });
+                let mask = this.board.buffer(0);
+                mask.drawPoly(action.x, action.y, card.sides, card.radius, card.angle, 1);
+                step = floodMaskStep(mask, action.x, action.y, this.currentPlayer);
                 break;
+            }
             case CardType.LINE:
                 if (!this.startOk(action.x, action.y) || action.x2 == null || action.y2 == null)
                 {
                     throw 'Game.play() failed';
                 }
+                let lineStep = this.board.drawLineStep(action.x, action.y, action.x2, action.y2, card.pixels, this.currentPlayer);
                 step = () =>
                 {
-                    this.board.drawLine(action.x, action.y, action.x2, action.y2, card.pixels, this.currentPlayer);
-                    return false
+                    return lineStep(10);
                 }
                 break;
             case CardType.PAINT:
@@ -213,25 +219,26 @@ class Game extends EventEmitter
                         throw 'Game.play() failed';
                     }
                 }
+                
+                let p = card.pixels;
+                let r = card.radius;
+                let i = 0;
+                let paintBoard = this.board.buffer(this.players.length);
                 step = () =>
                 {
-                    let p = card.pixels;
-                    let r = card.radius;
-                    let paintBoard = new Board(this.size, this.size);
-                    paintBoard.clear(this.players.length);
-                    for (let i = 0; i < action.points.length; i++)
+                    if (p <= 0)
                     {
-                        if (p <= 0)
-                        {
-                            throw 'Game.play() failed'; // too many points
-                        }
-
-                        let j = Math.max(i - 1, 0);
-                        let p2 = paintBoard.paint(action.points[j].x, action.points[j].y, action.points[i].x, action.points[i].y, r, p, this.currentPlayer);
-                        p = Math.min(p2, p - 1);
+                        throw 'Game.play() failed'; // too many points
                     }
+
+                    // TODO - should break paint() into steps, otherwise this animation can be too fast or slow depending on the number of pixels in a single paint
+                    // call
+                    let j = Math.max(i - 1, 0);
+                    let p2 = paintBoard.paint(action.points[j].x, action.points[j].y, action.points[i].x, action.points[i].y, card.radius, p, this.currentPlayer);
+                    p = Math.min(p2, p - 1);
                     this.board.add(paintBoard, this.currentPlayer);
-                    return false;
+                    i++;
+                    return (i < action.points.length);
                 }
                 break;
             case CardType.GROW:
@@ -239,10 +246,11 @@ class Game extends EventEmitter
                 {
                     throw 'Game.play() failed';
                 }
+                
+                let growStep = this.board.growStep(action.x, action.y, card.radius, this.currentPlayer);
                 step = () =>
                 {
-                    this.board.grow(action.x, action.y, card.radius, this.currentPlayer);
-                    return false;
+                    return growStep(1);
                 }
                 break;
             case CardType.DYNAMITE:
