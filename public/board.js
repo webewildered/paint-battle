@@ -91,9 +91,10 @@ class Board
             while (numSteps > 0)
             {
                 // Check if the end of the line was reached
-                if (u == ex && v == ey)
+                let end = (u == ex && v == ey);
+                if (end)
                 {
-                    return false;
+                    dir = nDir; // Always draw the end pixel
                 }
 
                 if (rx * ady < ry * adx)
@@ -171,6 +172,11 @@ class Board
                             return false;
                         }
                     }
+                }
+                
+                if (end)
+                {
+                    return false;
                 }
             }
 
