@@ -390,25 +390,40 @@ class Board
     
     // Returns a stepping function that implements paint
     // The function takes the number of steps to execute and returns undefined if stepping should continue, or
-    // p minus the number of newly set pixels if stepping is complete
-    paintStep(x, y, ex, ey, r, p, c)
+    // the paintf result if finished.
+    paintfStep(x, y, ex, ey, r, p, c, f)
     {
         const clamp = true;
         const single = false;
         const lineStep = this.linefStep(x, y, ex, ey, clamp, single, (u, v) => 
         {
+            // Check if the line gets blocked
+            if (!f(u, v))
+            {
+                return false;
+            }
+
+            // Remember the last successful line pixel
+            x = u;
+            y = v;
+
+            // Fill in the circle
             this.circlef(u, v, r, (u, v) =>
             {
-                if (this.get(u, v) != c)
+                if (f(u, v) && this.get(u, v) != c)
                 {
                     this.set(u, v, c);
                     p--;
                 }
             });
+
+            // Check if the pixel budget is empty
             if (p <= 0)
             {
                 return false;
             }
+
+            // Continue stepping
             return true;
         });
 
@@ -418,34 +433,20 @@ class Board
             {
                 return undefined;
             }
-            return p;
+            return { x: x, y: y, p: p };
         }
     }
     
-    // Draw a circular brush of radius r and color c along the line from (x, y) to (ex, ey), until the end is reached or the number of newly set pixels reaches p.
-    // Returns p minus the number of newly set pixels
-    paint(x, y, ex, ey, r, p, c)
+    // Draw a circular brush of radius r and color c along the line from (x, y) to (ex, ey), until one of:
+    // 1) the end is reached
+    // 2) the number of newly set pixels reaches p
+    // 3) f(u, v) returns false for a point (u, v) on the line
+    // Returns a struct with:
+    // - (x, y) the last successfully drawn point on the line
+    // - p the number of pixels left over (may be negative)
+    paintf(x, y, ex, ey, r, p, c, f)
     {
-        const clamp = true;
-        const single = false;
-        this.linefStep(x, y, ex, ey, clamp, single, (u, v) => 
-        {
-            this.circlef(u, v, r, (u, v) =>
-            {
-                if (this.get(u, v) != c)
-                {
-                    this.set(u, v, c);
-                    p--;
-                }
-            });
-            if (p <= 0)
-            {
-                return false;
-            }
-            return true;
-        })(Infinity);
-
-        return p;
+        return this.paintfStep(x, y, ex, ey, r, p, c, f)(Infinity);
     }
     
     // Draw a crosshair centered at (x, y) with radius r and color c

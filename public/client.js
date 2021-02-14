@@ -476,25 +476,23 @@ class Client extends EventEmitter
                     // Update the visualization on mouse move
                     let paintPoints = [];
                     let paintPixels = card.pixels;
+                    let last = undefined;
                     let moveListener = (point) =>
                     {
-                        let last = null;
-                        if (paintPoints.length == 0)
+                        if (!last)
                         {
                             last = point;
                         }
-                        else
+                        else if (point.x == last.x && point.y == last.y)
                         {
-                            last = paintPoints[paintPoints.length - 1];
-                            if (point.x == last.x && point.y == last.y)
-                            {
-                                return;
-                            }
+                            return;
                         }
                         paintPoints.push(point);
-                        let newPaintPixels = this.overlayBoard.paint(last.x, last.y, point.x, point.y, card.radius, paintPixels, game.currentPlayer);
+                        let result = this.overlayBoard.paintf(last.x, last.y, point.x, point.y, card.radius, paintPixels, game.currentPlayer,
+                            (u, v) => game.isOpen(u, v, game.currentPlayer));
+                        last = { x: result.x, y: result.y };
+                        paintPixels = Math.min(result.p, paintPixels - 1);
                         this.dirty = true;
-                        paintPixels = Math.min(newPaintPixels, paintPixels - 1);
                         if (paintPixels <= 0)
                         {
                             // Stop painting, same as if the user clicked

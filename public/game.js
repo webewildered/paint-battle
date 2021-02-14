@@ -124,6 +124,12 @@ class Game extends EventEmitter
         this.emit('reveal', cardId);
     }
 
+    isOpen(u, v, c)
+    {
+        let b = this.board.get(u, v);
+        return (b == c || b == this.players.length);
+    }
+
     // returns a stepping function. The function must be called repeatedly to step the game
     // as long as it returns true. Once it returns false, the play is complete.
     // throws on failure -- this should not happen but might if there is a bug or if a player
@@ -143,18 +149,11 @@ class Game extends EventEmitter
             throw 'Game.play() failed';
         }
 
-        // Returns true if pixel (u, v) on the board is open for color c
-        let isOpen = (u, v, c) => 
-        {
-            let b = this.board.get(u, v);
-            return (b == c || b == this.players.length);
-        }
-
         // Returns a stepping function that flood fills the board from x, y with color c, restricted to
         // pixels that are set to 1 in the mask and that are set to either c or this.players.length on the board
         let floodMaskStep = (mask, x, y, c) => mask.floodfStep(action.x, action.y, (u, v) =>
         {
-            if (mask.get(u, v) == 1 && isOpen(u, v, c))
+            if (mask.get(u, v) == 1 && this.isOpen(u, v, c))
             {
                 this.board.set(u, v, c);
                 return true;
@@ -215,7 +214,7 @@ class Game extends EventEmitter
                 let p = card.pixels;
                 let lineStep = this.board.linefStep(action.x, action.y, action.x2, action.y2, clamp, single, (u, v) => 
                 {
-                    if (!isOpen(u, v, c))
+                    if (!this.isOpen(u, v, c))
                     {
                         return false;
                     }
@@ -246,6 +245,7 @@ class Game extends EventEmitter
                 let i = 0;
                 let paintBoard = this.board.buffer(this.players.length);
                 let paintStep = undefined;
+                let paintPoint = action.points[0];
                 step = () =>
                 {
                     for (let k = 0; k < 5; k++) // 5 steps
@@ -261,9 +261,9 @@ class Game extends EventEmitter
                             {
                                 throw 'Game.play() failed'; // too many points
                             }
-                            let j = Math.max(i - 1, 0);
-                            paintStep = paintBoard.paintStep(action.points[j].x, action.points[j].y, action.points[i].x, action.points[i].y, card.radius, p, c);
-                            i++;
+                            let nextPoint = action.points[i++];
+                            paintStep = paintBoard.paintfStep(paintPoint.x, paintPoint.y, nextPoint.x, nextPoint.y, card.radius, p, c,
+                                (u, v) => this.isOpen(u, v, c));
                         }
 
                         // Execute one step of the paint
@@ -272,7 +272,8 @@ class Game extends EventEmitter
                         {
                             // If the segment is done, update the pixel count and mark paintStep undefined to move to the next segment
                             paintStep = undefined;
-                            p = Math.min(result, p - 1);
+                            p = Math.min(result.p, p - 1);
+                            paintPoint = { x: result.x, y: result.y };
                         }
                     }
 
