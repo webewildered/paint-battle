@@ -115,7 +115,7 @@ class Client extends EventEmitter
         super();
     }
 
-    begin(socket, playerNames, localPlayerId)
+    begin(socket, playerNames, localPlayerId, rules)
     {
         this.socket = socket;
         this.localPlayerId = localPlayerId;
@@ -126,7 +126,7 @@ class Client extends EventEmitter
 
         let numPlayers = playerNames.length;
         const shuffle = this.isLocalGame();
-        game = new Game(numPlayers, shuffle);
+        game = new Game(numPlayers, shuffle, rules);
 
         game.on('updateBoard', () =>
         {

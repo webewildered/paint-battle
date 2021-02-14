@@ -12,9 +12,11 @@ const EventEmitter = require('events');
 //
 class Game extends EventEmitter
 {
-    constructor(numPlayers, shuffle)
+    constructor(numPlayers, shuffle, rules)
     {
         super();
+
+        this.rules = rules;
 
         // Constants
         this.size = 299; // Gameboard dimension
@@ -126,8 +128,12 @@ class Game extends EventEmitter
 
     isOpen(u, v, c)
     {
-        let b = this.board.get(u, v);
-        return (b == c || b == this.players.length);
+        if (this.rules.blocking)
+        {
+            let b = this.board.get(u, v);
+            return (b == c || b == this.players.length);
+        }
+        return true;
     }
 
     // returns a stepping function. The function must be called repeatedly to step the game
@@ -289,7 +295,7 @@ class Game extends EventEmitter
                     throw 'Game.play() failed';
                 }
                 
-                let growStep = this.board.growStep(action.x, action.y, card.radius, c);
+                let growStep = this.board.growfStep(action.x, action.y, card.radius, c, (u, v) => this.isOpen(u, v, c));
                 step = () =>
                 {
                     return growStep(1);

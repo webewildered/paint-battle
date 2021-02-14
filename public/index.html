@@ -11,12 +11,13 @@
 <form id="joinForm" style="margin: 10px; display:none">
     Name: <input id="nameInput" autocomplete="off" style="font-size:18" />
     <button id="joinButton" style="font-size:18">New game</button>
-    <button id="localButton" style="font-size:18; display:none">Local game</button>
 </form>
 
 <form id="localForm" style="margin: 10px; display:none">
     <br />
     <input type="number" value="2" min="1" max="6" id="localPlayersInput" style="font-size:18;" />
+    <input type="checkbox" id="blockingRuleLocal">
+    <label for="blockingRuleLocal"> Enable blocking</label><br>
     <button id="localButton" style="font-size:18;">Local game</button>
 </form>
 
@@ -26,6 +27,8 @@
     <list id="playerList"></list>
     <br />
     <form id="startForm" style="display:none">
+        <input type="checkbox" id="blockingRule">
+        <label for="blockingRule"> Enable blocking</label><br>
         <button id="startButton" style="font-size:18">Start game</button>
     </form>
 </div>

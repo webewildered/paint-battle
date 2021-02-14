@@ -128,20 +128,24 @@ module.exports = function(http)
             });
 
             // Listen for game start
-            socket.on('start', () =>
+            socket.on('start', (rulesIn) =>
             {
+                // Validate rules
+                rules = {
+                    blocking: (rulesIn && rulesIn.blocking)
+                };
+
                 // Check if the sender is host
                 let playerId = room.getPlayerId(socket);
-                if (playerId == 0)
-                {
-                    room.broadcast(player => player.socket.emit('start'));
-                    console.log(key + ':' + playerId + ' start');
-                }
-                else
+                if (playerId != 0)
                 {
                     console.log('received start message from a non-host player');
                     return;
                 }
+                
+                // Broadcast the start message
+                room.broadcast(player => player.socket.emit('start', rules));
+                console.log(key + ':' + playerId + ' start');
 
                 // Ignore duplicate messages
                 if (room.started)
@@ -159,7 +163,7 @@ module.exports = function(http)
                 //
 
                 const shuffle = true;
-                let game = new Game(room.players.length, shuffle);
+                let game = new Game(room.players.length, shuffle, rules);
                 room.game = game;
                 let reveals = []; // List of reveals to send with the next play message
 

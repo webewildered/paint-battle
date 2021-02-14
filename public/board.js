@@ -260,9 +260,9 @@ class Board
         this.floodfStep(x, y, f)(Infinity);
     }
 
-    // Returns a function that will execute grow() in steps.
+    // Returns a function that will execute growf() in steps.
     // Works the same as dijkstrafStep().
-    growStep(x, y, r, c)
+    growfStep(x, y, r, c, f)
     {
         // Grow must start on a pixel of color c
         if (this.get(x, y) != c)
@@ -284,6 +284,8 @@ class Board
         let sqrt2 = Math.sqrt(2);
         return this.dijkstrafStep(x, y, r, (u, v, addNeighbor) =>
         {
+            if (!f(u, v)) { return; }
+
             // Draw the pixel
             this.set(u, v, c);
 
@@ -305,9 +307,9 @@ class Board
     // Sets every pixel to color c that is within r pixels of the continuous region of color c containing (x, y).
     // The continuous region is determined by flood().  The distances of pixels from that region are determined by
     // movement in the 8 cardinal + ordinal directions, a rough approximation of euclidean distance.
-    grow(x, y, r, c)
+    growf(x, y, r, c, f)
     {
-        this.growStep(x, y, r, c)(Infinity);
+        this.growStep(x, y, r, c, f)(Infinity);
     }
 
     //

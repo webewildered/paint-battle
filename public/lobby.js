@@ -31,12 +31,12 @@ $(function()
         $('#startForm').show();
         $('#startForm').submit(function()
         {
-            socket.emit('start');
+            socket.emit('start', { blocking: $('#blockingRule').is(':checked') });
             return false; // Don't reload the page
         });
     }
 
-    function startGame()
+    function startGame(rules)
     {
         $('#lobby').hide();
         $('#playerList').empty();
@@ -44,7 +44,7 @@ $(function()
         let playerNames = [];
         lobbyPlayers.forEach(player => playerNames.push(player.name));
         client = new Client();
-        client.begin(socket, playerNames, localPlayerId);
+        client.begin(socket, playerNames, localPlayerId, rules);
     }
     
     // Join an existing lobby or create a new one
@@ -67,13 +67,14 @@ $(function()
             joinForm.hide();
             localForm.hide();
             let numPlayers = $('#localPlayersInput').val();
+            let rules = { blocking: $('#blockingRuleLocal').is(':checked') };
             localPlayerId = -1;
             lobbyPlayers = [];
             for (let i = 0; i < numPlayers; i++)
             {
                 addPlayer('Player ' + (i + 1));
             }
-            startGame();
+            startGame(rules);
             return false;
         });
         host = true;
