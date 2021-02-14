@@ -284,7 +284,7 @@ class Client extends EventEmitter
                 }
                 
                 // Play the action
-                game.play(action);
+                this.animateStep(game.play(action));
             });
 
             // Another player left the game
@@ -384,23 +384,7 @@ class Client extends EventEmitter
             this.removeAllListeners('cancel');
         }
 
-        let playAction = (action) =>
-        {
-            let step = this.playAction(action);
-            let animate = () =>
-            {
-                // Step the animation
-                let updateCount = false;
-                if (!step())
-                {
-                    // At the end of the animation: update the count and remove from the ticker
-                    updateCount = true;
-                    app.ticker.remove(animate);
-                }
-                this.updateBoard(updateCount);
-            };
-            app.ticker.add(animate);
-        }
+        let playAction = (action) => this.animateStep(this.playAction(action));
 
         // Set the card's event listener
         let listener = null;
@@ -603,6 +587,7 @@ class Client extends EventEmitter
         });
     }
 
+    // Play an action from local input and send it to the server
     playAction(action)
     {
         this.removeAllListeners('cancel');
@@ -616,6 +601,24 @@ class Client extends EventEmitter
         }
 
         return step;
+    }
+
+    // Animate a stepping function
+    animateStep(step)
+    {
+        let animate = () =>
+        {
+            // Step the animation
+            let updateCount = false;
+            if (!step())
+            {
+                // At the end of the animation: update the count and remove from the ticker
+                updateCount = true;
+                app.ticker.remove(animate);
+            }
+            this.updateBoard(updateCount);
+        };
+        app.ticker.add(animate);
     }
 
     getPlayPosition(point)
