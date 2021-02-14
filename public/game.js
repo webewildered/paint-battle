@@ -36,7 +36,6 @@ class Game extends EventEmitter
         const countMed = [0, 5, 5, 5, 6, 7, 8][numPlayers];
         const countHigh = [0, 7, 7, 7, 8, 8, 9][numPlayers];
 
-        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.ERASER, radius: 30.5, name: 'Eraser' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.BOX, width: 45, height: 21, name: 'Box' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.BOX, width: 21, height: 45, name: 'Box' }));
         this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.LINE, pixels: 140, name: 'Line' }));
@@ -46,8 +45,12 @@ class Game extends EventEmitter
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 5, radius: 23.5, angle: 0.4, name: 'Polygon' }));
         this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 7, radius: 21.5, angle: 0.6, name: 'Polygon' }));
         this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.DYNAMITE, radius: 40.5 }));
-       
-        // this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.LINE, pixels: 140, name: 'Line' }));
+        
+        // Eraser doesn't do anything with blocking enabled
+        if (!rules.blocking)
+        {
+            this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.ERASER, radius: 30.5, name: 'Eraser' }));
+        }
 
         // Shuffle the deck on server (shuffle = true), mark all cards hidden on client (shuffle = false)
         let count = this.deck.length;
