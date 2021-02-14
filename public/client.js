@@ -607,14 +607,17 @@ class Client extends EventEmitter
         let animate = () =>
         {
             // Step the animation
-            let updateCount = false;
-            if (!step())
+            if (step())
             {
-                // At the end of the animation: update the count and remove from the ticker
-                updateCount = true;
+                // Update the board without updating the count
+                const updateCount = false;
+                this.updateBoard(updateCount);
+            }
+            else
+            {
+                // At the end of the animation
                 app.ticker.remove(animate);
             }
-            this.updateBoard(updateCount);
         };
         app.ticker.add(animate);
     }
