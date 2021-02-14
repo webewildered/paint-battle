@@ -245,10 +245,10 @@ class Game extends EventEmitter
                 let p = card.pixels;
                 let i = 0;
                 let paintBoard = this.board.buffer(this.players.length);
+                let paintStep = undefined;
                 step = () =>
                 {
-                    let paintStep = undefined;
-                    for (let j = 0; j < 5; j++) // 5 steps
+                    for (let k = 0; k < 5; k++) // 5 steps
                     {
                         // Call paintStep() to get a function will execute segment i of the paint
                         if (!paintStep)
@@ -277,7 +277,7 @@ class Game extends EventEmitter
                     }
 
                     this.board.add(paintBoard, c);
-                    return (i < action.points.length);
+                    return (paintStep || i < action.points.length);
                 }
                 break;
             }
