@@ -397,6 +397,7 @@ class Board
     {
         const clamp = true;
         const single = false;
+        const mask = this.buffer();
         const lineStep = this.linefStep(x, y, ex, ey, clamp, single, (u, v) => 
         {
             // Check if the line gets blocked
@@ -409,15 +410,24 @@ class Board
             x = u;
             y = v;
 
-            // Fill in the circle
-            this.circlef(u, v, r, (u, v) =>
+            // Draw a circle centered at the line pixel onto a mask, then floodfill the mask
+            mask.clear(0);
+            mask.drawCircle(u, v, r, 1);
+            mask.floodf(u, v, (u, v) =>
             {
-                if (f(u, v) && this.get(u, v) != c)
+                // Check if the pixel is within the circle and not blocked by f
+                if (mask.get(u, v) == 1 && f(u, v))
                 {
-                    this.set(u, v, c);
-                    p--;
+                    // Only count pixels that are not already set
+                    if (this.get(u, v) != c)
+                    {
+                        this.set(u, v, c);
+                        p--;
+                    }
+                    return true;
                 }
-            });
+                return false;
+            })
 
             // Check if the pixel budget is empty
             if (p <= 0)
@@ -443,6 +453,7 @@ class Board
     // 1) the end is reached
     // 2) the number of newly set pixels reaches p
     // 3) f(u, v) returns false for a point (u, v) on the line
+    // The circle is drawn by floodfill of points for which f() returns true, starting from each point on the line.
     // Returns a struct with:
     // - (x, y) the last successfully drawn point on the line
     // - p the number of pixels left over (may be negative)
