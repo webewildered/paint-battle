@@ -114,6 +114,20 @@ class Client extends EventEmitter
     {
         super();
     }
+    
+    textureReport()
+    {
+        let pixels = 0;
+        let count = 0;
+        console.log("texture report");
+        for (const propertyName in PIXI.utils.BaseTextureCache)
+        {
+            const t = PIXI.utils.BaseTextureCache[propertyName];
+            count++;
+            pixels += t.width * t.height;
+        }
+        console.log(count + ' textures ' + pixels + ' pixels');
+    }
 
     begin(socket, playerNames, localPlayerId, rules)
     {
@@ -146,6 +160,7 @@ class Client extends EventEmitter
 
         game.on('beginTurn', (playerId) =>
         {
+            this.textureReport();
             if (this.players[playerId].local)
             {
                 this.status.text = 'Your turn - play a card!'
@@ -732,11 +747,11 @@ class Client extends EventEmitter
         if (this.cursor != null)
         {
             this.boardSprite.removeChild(this.cursor);
-            this.cursor.destroy();
+            this.cursor.destroy(true);
             this.cursor = null;
             
             this.boardSprite.removeChild(this.previewCursor);
-            this.previewCursor.destroy();
+            this.previewCursor.destroy(true);
             this.previewCursor = null;
 
             this.setCursorStyle("");
@@ -760,9 +775,9 @@ class Client extends EventEmitter
     
     updateBoard(updateCount = true)
     {
-        let oldTexture = this.overlaySprite.texture;
+        let oldTexture = this.boardSprite.texture;
         this.boardSprite.texture = rtt(game.board, scale, this.palette, this.buffer);
-        oldTexture.destroy();
+        oldTexture.destroy(true);
         
         if (updateCount)
         {
@@ -778,7 +793,7 @@ class Client extends EventEmitter
     {
         let oldTexture = this.overlaySprite.texture;
         this.overlaySprite.texture = rtt(this.overlayBoard, scale, this.previewPalette, this.overlayBuffer);
-        oldTexture.destroy();
+        oldTexture.destroy(true);
     }
 }
 
@@ -932,7 +947,7 @@ class CCard extends EventEmitter
     destroy()
     {
         app.ticker.remove(this.update, this);
-        this.graphics.destroy();
+        this.graphics.destroy(true);
     }
 
     // Hepler getters
@@ -993,10 +1008,12 @@ class CCard extends EventEmitter
 
     updateGraphics(over)
     {
+        // Clean up old graphics
+        let children = [...this.graphics.children];
         this.graphics.removeChildren();
-        if (this.texture != null)
+        for (const c of children)
         {
-            this.texture.destroy();
+            c.destroy(true);
         }
         
         let card = this.getCard();

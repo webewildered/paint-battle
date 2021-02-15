@@ -16,6 +16,9 @@ class Game extends EventEmitter
     {
         super();
 
+        // Increase max listeners, so eg. every card can listen for reveal
+        this.setMaxListeners(100);
+
         this.rules = rules;
 
         // Constants
