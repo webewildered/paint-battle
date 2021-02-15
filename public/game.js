@@ -88,6 +88,9 @@ class Game extends EventEmitter
             this.players[i] = { hand: [], disconnected: false };
         }
         this.numConnected--;
+
+        // Queue of pending actions
+        this.queue = [];
     }
 
     getCard(cardId)
@@ -148,6 +151,23 @@ class Game extends EventEmitter
     // is trying to cheat.
     play(action)
     {
+        if (action)
+        {
+            this.queue.push(action);
+            if (this.queue.length > 1)
+            {
+                return undefined;
+            }
+        }
+        else if (this.queue.length)
+        {
+            action = this.queue[0];
+        }
+        else
+        {
+            return undefined;
+        }
+
         // Make sure the card belongs to the current player
         if (!this.players[this.currentPlayer].hand.includes(action.cardId))
         {
@@ -337,6 +357,7 @@ class Game extends EventEmitter
                 return true;
             }
 
+            this.queue.shift();
             this.emit('updateBoard');
             this.nextTurn();
             return false;

@@ -119,7 +119,6 @@ class Client extends EventEmitter
     {
         let pixels = 0;
         let count = 0;
-        console.log("texture report");
         for (const propertyName in PIXI.utils.BaseTextureCache)
         {
             const t = PIXI.utils.BaseTextureCache[propertyName];
@@ -619,6 +618,11 @@ class Client extends EventEmitter
     // Animate a stepping function
     animateStep(step)
     {
+        if (step === undefined)
+        {
+            return;
+        }
+
         let animate = () =>
         {
             // Step the animation
@@ -632,6 +636,9 @@ class Client extends EventEmitter
             {
                 // At the end of the animation
                 app.ticker.remove(animate);
+
+                // Check if there is something else to play
+                this.animateStep(game.play());
             }
         };
         app.ticker.add(animate);
