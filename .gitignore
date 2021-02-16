@@ -3,3 +3,4 @@ notes
 azure.err
 *.publishsettings
 debug.log
+out/*

@@ -22,7 +22,7 @@ app.set('port', port);
 var http = require('http').createServer(app);
 
 // Create game server
-require('../server.js')(http);
+require('../out/server.js')(http);
 
 /**
  * Listen on provided port, on all network interfaces.

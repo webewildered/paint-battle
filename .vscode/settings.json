@@ -4,5 +4,11 @@
         ".vscode{,/**}"
     ],
     "appService.defaultWebAppToDeploy": "/subscriptions/a0c3181c-7903-41ce-96f1-0267dcc5a0d0/resourceGroups/PaintBattleResourceGroup/providers/Microsoft.Web/sites/PaintBattle",
-    "appService.deploySubpath": "."
+    "appService.deploySubpath": ".",
+    "files.exclude": {
+        "out": false // set this to true to hide the "out" folder with the compiled JS files
+    },
+    "search.exclude": {
+        "out": true // set this to false to include "out" folder in search results
+    }
 }
