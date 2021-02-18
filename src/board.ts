@@ -147,9 +147,8 @@ export class Board
         let dist = new Point(0.5, 0.5);
 
         // Previous step was in the x direction, y direction, or neither
-        const nStep = -1;
-        const markStep = new Point(single ? 0 : nStep, single ? 1 : nStep);
-        let lastStep = nStep;
+        const nMove = -1;
+        let lastMove = nMove;
 
         return (numSteps) =>
         {
@@ -159,7 +158,7 @@ export class Board
                 let final = pos.equal(end);
                 if (final)
                 {
-                    lastStep = nStep; // Always draw the end pixel
+                    lastMove = nMove; // Always draw the end pixel
                 }
 
                 // Helper: move(0) moves in x, move(1) moves in y
@@ -168,10 +167,10 @@ export class Board
                     let j = 1 - i;
                     
                     // Check for diagonal step
-                    if (lastStep != markStep[i] && lastStep != nStep)
+                    if (single && lastMove != i && lastMove != nMove)
                     {
                         // Skip the last pixel
-                        lastStep = nStep;
+                        lastMove = nMove;
                     }
                     else
                     {
@@ -181,11 +180,11 @@ export class Board
                             return;
                         }
                         numSteps--;
-                        lastStep = i;
+                        lastMove = i;
                     }
 
                     // move in x
-                    dist[j] -= dist[i] * absSlope[0];
+                    dist[j] -= dist[i] * absSlope[i];
                     dist[i] = 1;
                     pos[i] += signDir[i];
                 

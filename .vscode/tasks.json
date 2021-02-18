@@ -17,20 +17,19 @@
             "detail": "tsc -watch -p ./"
         },
         {
+            "label": "webpack",
+            "type": "shell",
+            "command": "npx webpack",
+        },
+        {
             "label": "browserify",
             "type": "shell",
             "command": "browserify -p tsify --debug src/lobby.ts -o public/bundle.js",
-            // "dependsOn": [
-            //     "tsbuild"
-            // ]
         },
         {
             "label": "browserifyTest",
             "type": "shell",
             "command": "browserify -p tsify --debug src/test.ts -o public/testbundle.js",
-            // "dependsOn": [
-            //     "tsbuild"
-            // ]
         }
     ]
 }

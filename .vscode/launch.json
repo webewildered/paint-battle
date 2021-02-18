@@ -20,7 +20,8 @@
             "name": "Client",
             "url": "http://localhost:3000",
             "webRoot": "${workspaceFolder}",
-            "preLaunchTask": "browserify",
+            "preLaunchTask": "webpack",
+            //"preLaunchTask": "browserify",
             //"runtimeArgs": ["--disable-3d-apis"]
         },
         {
