@@ -563,7 +563,7 @@ export class Client extends EventEmitter
                     this.on('boardClick', listener);
 
                     // Fake a mouse move event to draw in the start position immediately
-                    moveListener(point);
+                    moveListener(playPoint);
                 }
                 break;
 
