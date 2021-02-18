@@ -1,7 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
-import { CardType } from './CardType';
-import { Game } from './game';
-import { Board } from './board';
+import { CardType, Card, BoxCard, PolyCard, LineCard, PaintCard, Rules, Action, Reveal, Game } from './game';
+import { Point, Board } from './board';
 const EventEmitter = require('events');
 
 // Constants
@@ -32,27 +31,9 @@ let game: Game;
 let client: Client;
 let app: PIXI.Application;
 
-class Point extends Array<number>
-{
-    constructor(x: number, y: number)
-    {
-        super(...[x, y]);
-    }
-    
-    get x(): number { return this[0]; }
-	get y(): number { return this[1]; }
-    set x(a: number) { this[0] = a; }
-    set y(a: number) { this[1] = a; }
-}
-
 //
 // Global helpers
 //
-
-function cardName(card: any): string // TODO.ts maybe card type, but they all have different data
-{
-    return (card.name == null ? card.type : card.name);
-}
 
 // Render a board to a PIXI texture
 function rtt(board: Board, scale: number, palette: number[][], buffer: Uint8ClampedArray|undefined = undefined)
@@ -74,29 +55,36 @@ function rtt(board: Board, scale: number, palette: number[][], buffer: Uint8Clam
 }
 
 // Returns a Board representing what the card will allow the player to draw
-function renderCard(card: any, on: number, off: number, minSize = 0) // TODO.ts card type
+function renderCard(card: Card, on: number, off: number, minSize = 0)
 {
     // Determine the dimensions required
     let w = 0;
     let h = 0;
     switch (card.type)
     {
-        case CardType.CIRCLE:
-        case CardType.PAINT:
-        case CardType.POLY:
-        case CardType.ERASER:
-        case CardType.DYNAMITE:
+        case CardType.Circle:
+        case CardType.Paint:
+        case CardType.Poly:
+        case CardType.Eraser:
+        case CardType.Dynamite:
+        {
             w = Math.floor(card.radius) * 2 + 1;
             h = w;
             break;
-        case CardType.BOX:
-            w = Math.floor(card.width);
-            h = Math.floor(card.height);
+        }
+        case CardType.Box:
+        {
+            let boxCard = card as BoxCard;
+            w = Math.floor(boxCard.width);
+            h = Math.floor(boxCard.height);
             break;
+        }
         default:
+        {
             w = minSize;
             h = minSize;
             break;
+        }
     }
 
     // Enforce minSize
@@ -110,22 +98,28 @@ function renderCard(card: any, on: number, off: number, minSize = 0) // TODO.ts 
     
     let board = new Board(w, h);
     board.clear(off);
-    let x = Math.floor((w - 1) / 2);
-    let y = Math.floor((h - 1) / 2);
+    let center = new Point(Math.floor((w - 1) / 2), Math.floor((h - 1) / 2));
 
     switch (card.type)
     {
-        case CardType.CIRCLE:
-        case CardType.PAINT:
-        case CardType.ERASER:
-            board.drawCircle(x, y, card.radius, on);
+        case CardType.Circle:
+        case CardType.Paint:
+        case CardType.Eraser:
+        {
+            board.drawCircle(center, card.radius, on);
             break;
-        case CardType.BOX:
-            board.drawBox(x, y, w, h, on);
+        }
+        case CardType.Box:
+        {
+            board.drawBox(center, w, h, on);
             break;
-        case CardType.POLY:
-            board.drawPoly(x, y, card.sides, card.radius, card.angle, on);
+        }
+        case CardType.Poly:
+        {
+            let polyCard = card as PolyCard;
+            board.drawPoly(center, polyCard.sides, polyCard.radius, polyCard.angle, on);
             break;
+        }
     }
 
     return board;
@@ -133,27 +127,31 @@ function renderCard(card: any, on: number, off: number, minSize = 0) // TODO.ts 
 
 export class Client extends EventEmitter
 {
-    constructor()
+    socket: Socket;
+    localPlayerId: number;
+    palette: number[][];
+    previewPalette: number[][]
+    players: CPlayer[];
+    
+    buffer: Uint8ClampedArray;
+    overlayBuffer: Uint8ClampedArray;
+
+    boardContainer: PIXI.Container;
+    boardGraphics: PIXI.Graphics;
+    boardSprite: PIXI.Sprite;
+    overlayBoard: Board;
+    overlaySprite: PIXI.Sprite;
+    
+    pile: PIXI.Container;
+    pileCard: CCard;
+    pileText: PIXI.Text;
+    status: PIXI.Text;
+    cancel: PIXI.Graphics;
+
+    constructor(socket: Socket, playerNames: string[], localPlayerId: number, rules: Rules)
     {
         super();
-        client = this; // TODO get rid of the globals?
-    }
-    
-    textureReport()
-    {
-        let pixels = 0;
-        let count = 0;
-        for (const propertyName in PIXI.utils.BaseTextureCache)
-        {
-            const t = PIXI.utils.BaseTextureCache[propertyName];
-            count++;
-            pixels += t.width * t.height;
-        }
-        console.log(count + ' textures ' + pixels + ' pixels');
-    }
-
-    begin(socket: Socket, playerNames: string[], localPlayerId: number, rules: any) // TODO.ts rules struct
-    {
+        
         this.socket = socket;
         this.localPlayerId = localPlayerId;
 
@@ -228,7 +226,7 @@ export class Client extends EventEmitter
 
         // Game board display
         let boardSize = game.size * 2;
-        this.buffer = new Uint8ClampedArray(boardSize * boardSize * 4);//new Uint8Array(boardSize * boardSize * 4);
+        this.buffer = new Uint8ClampedArray(boardSize * boardSize * 4);
         this.boardGraphics = new PIXI.Graphics();
         this.boardContainer.addChild(this.boardGraphics);
         this.boardSprite = new PIXI.Sprite();
@@ -236,7 +234,7 @@ export class Client extends EventEmitter
         this.boardContainer.addChild(this.boardSprite);
 
         // Board overlay for preview of player actions
-        this.overlayBuffer = new Uint8ClampedArray(boardSize * boardSize * 4);//new Uint8Array(boardSize * boardSize * 4);
+        this.overlayBuffer = new Uint8ClampedArray(boardSize * boardSize * 4);
         this.overlayBoard = new Board(game.size, game.size);
         this.overlaySprite = new PIXI.Sprite();
         this.overlaySprite.visible = false;
@@ -246,7 +244,6 @@ export class Client extends EventEmitter
         // Setup mouse events
         //
         
-        this.onBoardMouseDown = null;
         this.boardSprite.on('mousedown', (event: PIXI.InteractionEvent) =>
         {
             this.emit('boardClick', this.getBoardPosition(event.data));
@@ -309,18 +306,12 @@ export class Client extends EventEmitter
         if (!this.isLocalGame())
         {
             // Card revealed
-            let onReveal = (cardId: number, deckId: number) => { game.reveal(cardId, deckId); }
+            let onReveal = (reveal: Reveal) => { game.reveal(reveal); }
             socket.on('reveal', onReveal);
 
             // Another player played a card
-            socket.on('play', (action: any) => // TODO.ts action type
+            socket.on('play', (action: Action) =>
             {
-                // Read any reveals attached to the action
-                for (let reveal of action.reveals)
-                {
-                    onReveal(reveal.cardId, reveal.deckId);
-                }
-                
                 // Play the action
                 this.animateStep(game.play(action));
             });
@@ -344,10 +335,25 @@ export class Client extends EventEmitter
             app.view.style.width = w.toString();
             app.view.style.height = h.toString();
             app.renderer.resize(w, h);
-            client.layout();
+            this.layout();
         };
         window.onresize = onResize;
         onResize(); // pixi scales incorrectly when res != 1, resize now to fix it
+        
+        client = this; // TODO get rid of the globals?
+    }
+    
+    textureReport()
+    {
+        let pixels = 0;
+        let count = 0;
+        for (const propertyName in PIXI.utils.BaseTextureCache)
+        {
+            const t = PIXI.utils.BaseTextureCache[propertyName];
+            count++;
+            pixels += t.width * t.height;
+        }
+        console.log(count + ' textures ' + pixels + ' pixels');
     }
 
     // Returns the position of the mouse in board-space, {x:int, y:int}
@@ -410,11 +416,11 @@ export class Client extends EventEmitter
     playCard(cardId: number)
     {
         // Create a cursor for the chosen card
-        let card = game.getCard(cardId);
+        let card = game.getCard(cardId) as Card;
         this.setCursor(card);
         
         // Update the status
-        this.status.text = 'Playing ' + cardName(card) + ' - click on the board to draw, starting on your own color!';
+        this.status.text = 'Playing ' + card.name + ' - click on the board to draw, starting on your own color!';
         this.cancel.visible = true;
 
         let endCancel = () =>
@@ -423,7 +429,7 @@ export class Client extends EventEmitter
             this.removeAllListeners('cancel');
         }
 
-        let playAction = (action: any) => this.animateStep(this.playAction(action)); // TODO.ts action type
+        let playAction = (action: Action) => this.animateStep(this.playAction(action));
 
         // Set the card's event listener
         let listener: (point: Point) => void;
@@ -431,36 +437,36 @@ export class Client extends EventEmitter
         switch (card.type)
         {
             // Single-click cards with no special visualization
-            case CardType.CIRCLE:
-            case CardType.BOX:
-            case CardType.ERASER:
+            case CardType.Circle:
+            case CardType.Box:
+            case CardType.Eraser:
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
                     if (playPoint)
                     {
                         this.off('boardClick', listener);
-                        playAction({cardId:cardId, x:point.x, y:point.y});
+                        playAction(new Action(cardId, [point]));
                         this.clearCursor();
                     }
                 }
                 break;
                 
-            case CardType.POLY:
+            case CardType.Poly:
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
                     if (playPoint)
                     {
                         this.off('boardClick', listener);
-                        playAction({cardId:cardId, x:point.x, y:point.y});
+                        playAction(new Action(cardId, [point]));
                         this.clearCursor();
                     }
                 }
                 break;
 
             // Line - two clicks with line visualization after the first click
-            case CardType.LINE:
+            case CardType.Line:
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
@@ -477,7 +483,7 @@ export class Client extends EventEmitter
                     {
                         let point2 = this.getBoardPosition();
                         this.overlayBoard.clear(this.previewPalette.length - 1);
-                        this.overlayBoard.drawLine(point.x, point.y, point2.x, point2.y, card.pixels, 0);
+                        this.overlayBoard.drawLine(point, point2, (card as LineCard).pixels, 0);
                         this.updateOverlayBoard();
                     }
                     app.ticker.add(update);
@@ -488,7 +494,7 @@ export class Client extends EventEmitter
                         // 2nd point
                         this.off('boardClick', listener);
                         app.ticker.remove(update);
-                        playAction({cardId:cardId, x:point.x, y:point.y, x2:point2.x, y2:point2.y});
+                        playAction(new Action(cardId, [point, point2]));
                         this.endPreview();
                     };
                     this.on('boardClick', listener);
@@ -496,7 +502,7 @@ export class Client extends EventEmitter
                 break;
             
             // Paint - two clicks with visualization after the first click
-            case CardType.PAINT:
+            case CardType.Paint:
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
@@ -509,8 +515,8 @@ export class Client extends EventEmitter
                     this.beginPreview();
 
                     // Update the visualization on mouse move
-                    let paintPoints: any[] = [];
-                    let paintPixels = card.pixels;
+                    let paintPoints: Point[] = [];
+                    let paintPixels = (card as PaintCard).pixels;
                     let last: Point|undefined = undefined;
                     let moveListener = (point: Point) =>
                     {
@@ -523,10 +529,10 @@ export class Client extends EventEmitter
                             return;
                         }
                         paintPoints.push(point);
-                        let result = this.overlayBoard.paintf(last.x, last.y, point.x, point.y, card.radius, paintPixels, game.currentPlayer,
-                            (u: number, v: number) => game.isOpen(u, v, game.currentPlayer));
-                        last = new Point(result.x, result.y);
-                        paintPixels = Math.min(result.p, paintPixels - 1);
+                        let result = this.overlayBoard.paintf(last, point, card.radius, paintPixels, game.currentPlayer, 
+                            (point: Point) => game.isOpen(point, game.currentPlayer));
+                        last = result.point;
+                        paintPixels = Math.min(result.pixels, paintPixels - 1);
                         this.dirty = true;
                         if (paintPixels <= 0)
                         {
@@ -550,8 +556,7 @@ export class Client extends EventEmitter
                         this.overlayBoard.clear(this.previewPalette.length - 1);
                         this.updateOverlayBoard();
                 
-                        this.onBoardMouseDown = null;
-                        playAction({cardId:cardId, points:paintPoints});
+                        playAction(new Action(cardId, paintPoints));
                         
                         this.endPreview();
                     }
@@ -563,7 +568,7 @@ export class Client extends EventEmitter
                 break;
 
             // Grow - single click with visualization of the range that will be extended
-            case CardType.GROW:
+            case CardType.Grow:
                 this.beginPreview();
 
                 // Update the visualization each frame to show the line to the current mouse position
@@ -571,7 +576,7 @@ export class Client extends EventEmitter
                 {
                     let point = this.getBoardPosition();
                     let floodBoard = this.overlayBoard.buffer(this.palette.length - 1);
-                    floodBoard.drawFlood(game.board, point.x, point.y, game.currentPlayer);
+                    floodBoard.drawFlood(game.board, point, game.currentPlayer);
                     this.overlayBoard.outline(game.currentPlayer, 0, this.previewPalette.length - 1, floodBoard);
                     this.updateOverlayBoard();
                 }
@@ -585,14 +590,14 @@ export class Client extends EventEmitter
                         this.off('boardClick', listener);
                         app.ticker.remove(update);
                         
-                        playAction({cardId:cardId, x:point.x, y:point.y});
+                        playAction(new Action(cardId, [point]));
                         this.endPreview();
                     }
                 }
                 break;
                 
             // Dynamite: animated after click
-            case CardType.DYNAMITE:
+            case CardType.Dynamite:
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
@@ -600,7 +605,7 @@ export class Client extends EventEmitter
                     {
                         // Animate the explosion
                         this.off('boardClick', listener);
-                        playAction({cardId:cardId, x:point.x, y:point.y});
+                        playAction(new Action(cardId, [point]));
                         this.clearCursor();
                     }
                 }
@@ -620,7 +625,7 @@ export class Client extends EventEmitter
     }
 
     // Play an action from local input and send it to the server
-    playAction(action: any) // TODO.ts action type
+    playAction(action: Action)
     {
         this.removeAllListeners('cancel');
         this.cancel.visible = false;
@@ -667,7 +672,7 @@ export class Client extends EventEmitter
     getPlayPosition(point: Point): Point|undefined
     {
         // Keep the point if it's a valid play position
-        if (game.startOk(point.x, point.y))
+        if (game.startOk(point))
         {
             return point;
         }
@@ -680,7 +685,7 @@ export class Client extends EventEmitter
         {
             for (let j = -1; j <= 1; j++)
             {
-                if (game.startOk(point.x + i, point.y + j))
+                if (game.startOk(new Point(point.x + i, point.y + j)))
                 {
                     x += i;
                     y += j;
@@ -710,10 +715,10 @@ export class Client extends EventEmitter
         }
 
         // Return the point if it is valid, otherwise return null
-        return game.startOk(testPoint.x, testPoint.y) ? testPoint : undefined;
+        return game.startOk(testPoint) ? testPoint : undefined;
     }
 
-    setCursor(card: any) // TODO.ts card type
+    setCursor(card: Card)
     {
         this.clearCursor();
 
@@ -723,7 +728,7 @@ export class Client extends EventEmitter
         // Create a crosshair cursor
         let cursorBoard = new Board(crossSize, crossSize);
         cursorBoard.clear(this.previewPalette.length - 1);
-        cursorBoard.drawCross(Math.floor(cursorBoard.width / 2), Math.floor(cursorBoard.height / 2), crossRadius, 0);
+        cursorBoard.drawCross(new Point(Math.floor(cursorBoard.width / 2), Math.floor(cursorBoard.height / 2)), crossRadius, 0);
         this.cursor = new PIXI.Sprite(rtt(cursorBoard, scale, this.previewPalette));
         this.boardSprite.addChild(this.cursor);
 
@@ -827,7 +832,7 @@ export class Client extends EventEmitter
 class CPlayer
 {
     id: number;
-    cards: any[]; // TODO.ts card type
+    cards: CCard[];
     container: PIXI.Container;
     local: boolean;
     name: string;
@@ -914,8 +919,8 @@ class CPlayer
         this.updateTargets();
 
         // Report the last card played in the status
-        let gameCard = game.getCard(cardId);
-        this.lastPlayed = cardName(gameCard);
+        let gameCard = game.getCard(cardId) as Card;
+        this.lastPlayed = gameCard.name;
         this.updateStatus();
     }
 
@@ -1076,10 +1081,10 @@ class CCard extends EventEmitter
             let pixels = 0;
             switch (card.type)
             {
-                case CardType.CIRCLE:
-                case CardType.BOX:
-                case CardType.POLY:
-                case CardType.ERASER:
+                case CardType.Circle:
+                case CardType.Box:
+                case CardType.Poly:
+                case CardType.Eraser:
                     let board = renderCard(card, 0, 1, 0);
                     pixels = board.count(1)[0];
                     this.texture = rtt(board, 1, cardPalette);
@@ -1088,14 +1093,17 @@ class CCard extends EventEmitter
                     sprite.y = Math.floor(this.graphics.height - sprite.height) / 2;
                     this.graphics.addChild(sprite);
                     break;
-                case CardType.LINE:
-                case CardType.PAINT:
-                    pixels = card.pixels;
+                case CardType.Line:
+                    pixels = (card as PaintCard).pixels;
+                    break;
+                case CardType.Paint:
+                    pixels = (card as LineCard).pixels;
+                    break;
                 default:
                     break;
             }
 
-            let text = new PIXI.Text(cardName(card), {fontFamily : 'Arial', fontSize: 24, fill : 0x222222, align : 'left'});
+            let text = new PIXI.Text(card.name, {fontFamily : 'Arial', fontSize: 24, fill : 0x222222, align : 'left'});
             text.x = Math.floor((cardWidth - text.width) / 2);
             text.y = Math.floor(10);
             this.graphics.addChild(text);

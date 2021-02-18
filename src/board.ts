@@ -1,28 +1,79 @@
 import PriorityQueue from "priorityqueue";
 
-class Node
+export class Point extends Array<number>
 {
-    constructor(x: number, y: number, cost: number)
+    constructor(x: number, y: number = x)
     {
-        this.x = x;
-        this.y = y;
+        super(...[x, y]);
+    }
+    
+    get x(): number { return this[0]; }
+	get y(): number { return this[1]; }
+    set x(a: number) { this[0] = a; }
+    set y(a: number) { this[1] = a; }
+
+    unary(f: (a: number) => number): Point
+    {
+        return new Point(f(this.x), f(this.y));
+    }
+
+    binary(point: Point, f: (a: number, b: number) => number): Point
+    {
+        return new Point(f(this.x, point.x), f(this.y, point.y));
+    }
+
+    add(point: Point) { return this.binary(point, (a: number, b: number) => a + b); }
+    sub(point: Point) { return this.binary(point, (a: number, b: number) => a - b); }
+    mul(point: Point) { return this.binary(point, (a: number, b: number) => a * b); }
+    div(point: Point) { return this.binary(point, (a: number, b: number) => a / b); }
+    dot(point: Point) { return this.mul(point).sum(); }
+    abs() { return this.unary((a: number) => Math.abs(a)); }
+    sign() { return this.unary((a: number) => Math.sign(a)); }
+    floor() { return this.unary((a: number) => Math.floor(a)); }
+    ceil() { return this.unary((a: number) => Math.ceil(a)); }
+    sum() { return this.x + this.y; }
+
+    equal(point: Point): boolean
+    {
+        return this.x == point.x && this.y == point.y;
+    }
+
+    clone(): Point
+    {
+        return new Point(this.x, this.y);
+    }
+}
+
+class Node extends Point
+{
+    constructor(point: Point, cost: number)
+    {
+        super(point.x, point.y);
         this.cost = cost;
     }
-    x: number;
-    y: number;
+    
     cost: number;
 };
 
+export class PaintResult
+{
+    constructor(
+        public point: Point,    // Last point painted
+        public pixels: number   // Number of pixels remaining
+    )
+    {}
+}
+
+export type PaintStep = (steps: number) => PaintResult | undefined;
+
 export class Board
 {
-    width: number;
-    height: number;
+    size: Point;
     data: number[];
 
     constructor(width: number, height: number)
     {
-        this.width = width;
-        this.height = height;
+        this.size = new Point(width, height);
         this.data = new Array<number>(width * height);
     }
 
@@ -30,23 +81,26 @@ export class Board
     // Accessors
     //
 
-    getIndex(x: number, y: number): number
+    get width(): number { return this.size.x; }
+    get height(): number { return this.size.y; }
+
+    getIndex(point: Point): number
     {
-        return x + y * this.width;
+        return point.x + point.y * this.width;
     }
 
-    get(x: number, y: number): number|undefined
+    get(point: Point): number|undefined
     {
-        if (x >= 0 && x < this.width && y >= 0 && y < this.height)
+        if (point.x >= 0 && point.x < this.width && point.y >= 0 && point.y < this.height)
         {
-            return this.data[this.getIndex(x, y)];
+            return this.data[this.getIndex(point)];
         }
         return undefined;
     }
 
-    set(x: number, y: number, c: number)
+    set(point: Point, c: number)
     {
-        this.data[this.getIndex(x, y)] = c;
+        this.data[this.getIndex(point)] = c;
     }
 
     //
@@ -64,134 +118,97 @@ export class Board
     }
 
     // Calls f(u, v) for each pixel (u, v) with ||(x, y) - (u, v)|| <= r
-    circlef(x: number, y: number, r: number, f: (u: number, v: number) => any)
+    circlef(center: Point, radius: number, f: (point: Point) => any)
     {
-        let p = Math.floor(r);
-        for (let u = Math.max(-p, -x); u <= Math.min(p, this.width - 1 - x); u++)
+        let p = Math.floor(radius);
+        for (let u = Math.max(-p, -center.x); u <= Math.min(p, this.width - 1 - center.x); u++)
         {
-            let q = Math.floor(Math.sqrt(r * r - u * u));
-            for (let v = Math.max(-q, -y); v <= Math.min(q, this.height - 1 - y); v++)
+            let q = Math.floor(Math.sqrt(radius * radius - u * u));
+            for (let v = Math.max(-q, -center.y); v <= Math.min(q, this.height - 1 - center.y); v++)
             {
-                f(x + u, y + v);
+                f(center.add(new Point(u, v)));
             }
         }
     }
     
-    linefStep(x: number, y: number, ex: number, ey: number, clamp: boolean, single: boolean, f: (u: number, v: number) => any): (steps: number) => boolean
+    linefStep(start: Point, end: Point, clamp: boolean, single: boolean, f: (point: Point) => any): (steps: number) => boolean
     {
         // Line origin and direction
-        let dx = ex - x;
-        let dy = ey - y;
-        let u = Math.floor(x);
-        let v = Math.floor(y);
+        let dir = end.sub(start);
+        let pos = start.floor();
+        end = end.clone();
 
         // absolute value and sign of direction
-        let adx = Math.abs(dx);
-        let ady = Math.abs(dy);
-        let adydx = ady / adx;
-        let adxdy = adx / ady;
-        let idx = (dx > 0) ? 1 : -1;
-        let idy = (dy > 0) ? 1 : -1;
+        let absDir = dir.abs();
+        let absSlope = new Point(absDir.y / absDir.x, absDir.x / absDir.y); // dy/dx, dx/dy
+        let signDir = dir.sign();
 
         // Distance until the next pixel in each direction
-        let rx = 0.5;
-        let ry = 0.5;
+        let dist = new Point(0.5, 0.5);
 
         // Previous step was in the x direction, y direction, or neither
-        const nDir = -1;
-        const xDir = single ? 0 : nDir;
-        const yDir = single ? 1 : nDir;
-        let dir = nDir;
+        const nStep = -1;
+        const markStep = new Point(single ? 0 : nStep, single ? 1 : nStep);
+        let lastStep = nStep;
 
         return (numSteps) =>
         {
             while (numSteps > 0)
             {
                 // Check if the end of the line was reached
-                let end = (u == ex && v == ey);
-                if (end)
+                let final = pos.equal(end);
+                if (final)
                 {
-                    dir = nDir; // Always draw the end pixel
+                    lastStep = nStep; // Always draw the end pixel
                 }
 
-                if (rx * ady < ry * adx)
+                // Helper: move(0) moves in x, move(1) moves in y
+                let move = (i: number) =>
                 {
+                    let j = 1 - i;
+                    
                     // Check for diagonal step
-                    if (dir != xDir && dir != nDir)
+                    if (lastStep != markStep[i] && lastStep != nStep)
                     {
                         // Skip the last pixel
-                        dir = nDir;
+                        lastStep = nStep;
                     }
                     else
                     {
-                        if (!f(u, v))
+                        if (!f(pos))
                         {
-                            return false;
+                            final = true;
+                            return;
                         }
                         numSteps--;
-                        dir = xDir;
+                        lastStep = i;
                     }
 
                     // move in x
-                    ry -= rx * adydx;
-                    rx = 1;
-                    u += idx;
+                    dist[j] -= dist[i] * absSlope[0];
+                    dist[i] = 1;
+                    pos[i] += signDir[i];
                 
                     // Check for collision with left/right edge
-                    if (u < 0 || u >= this.width)
+                    if (pos[i] < 0 || pos[i] >= this.size[i])
                     {
-                        if (clamp && ady != 0)
+                        if (clamp && absDir[j] != 0)
                         {
-                            u = Math.min(Math.max(u, 0), this.width - 1);
-                            ex = u;
-                            adx = adxdy = adydx = 0;
+                            pos[i] = Math.min(Math.max(pos[i], 0), this.size[i] - 1);
+                            end[i] = pos[i];
+                            absDir[i] = absSlope.x = absSlope.y = 0;
                         }
                         else
                         {
-                            return false;
+                            final = true;
                         }
                     }
                 }
-                else
-                {
-                    // Check for diagonal step
-                    if (dir != yDir && dir != nDir)
-                    {
-                        // Skip the last pixel
-                        dir = nDir;
-                    }
-                    else
-                    {
-                        if (!f(u, v))
-                        {
-                            return false;
-                        }
-                        numSteps--;
-                        dir = yDir;
-                    }
-                    
-                    // move in y
-                    rx -= ry * adxdy;
-                    ry = 1;
-                    v += idy;
-                    
-                    // Check for collision with top/bottom edge
-                    if (v < 0 || v >= this.height)
-                    {
-                        if (clamp && adx != 0)
-                        {
-                            v = Math.min(Math.max(v, 0), this.height - 1);
-                            ey = v;
-                            ady = adxdy = adydx = 0;
-                        }
-                        else
-                        {
-                            return false;
-                        }
-                    }
-                }
+
+                // Check whether the line crosses x or y boundary next and move in that direction
+                move(dist.x * absDir.y < dist.y * absDir.x ? 0 : 1);
                 
-                if (end)
+                if (final)
                 {
                     return false;
                 }
@@ -203,14 +220,14 @@ export class Board
     
     // Returns a function that will execute dijkstraf() in steps, increasing the maximum cost each time it is called by a
     // delta that you pass in (defaults to 1).  The step function returns false when it is complete.
-    dijkstrafStep(x: number, y: number, maxCost: number, f: (u: number, v: number, addNeighbor: (u: number, v: number, cost: number) => any) => any)
+    dijkstrafStep(start: Point, maxCost: number, f: (point: Point) => Node[])
     {
         // Buffer tracking whether each pixel has been visited.  0 = no, 1 = yes
         let visited = this.buffer(0);
         
-        // Visit pixels in cost order
+        // Visit pixels in cost order beginning from the start point
         let queue = new PriorityQueue({ comparator: function(a: Node, b: Node) { return b.cost - a.cost; }}); // lower cost -> higher priority
-        queue.enqueue(new Node(x, y, 0));
+        queue.enqueue(new Node(start, 0));
 
         // Return a stepping function
         let stepCost = 0;
@@ -224,19 +241,18 @@ export class Board
                     return true;
                 }
                 let item = queue.dequeue() as Node;
-                let u = item.x;
-                let v = item.y;
-                if (visited.get(u, v) == 0)
+                if (visited.get(item) == 0)
                 {
-                    visited.set(u, v, 1);
-                    f(u, v, (u, v, cost) =>
+                    visited.set(item, 1);
+                    let neighbors = f(item);
+                    for (const neighbor of neighbors)
                     {
-                        cost += item.cost;
-                        if (cost < maxCost)
+                        neighbor.cost += item.cost;
+                        if (neighbor.cost < maxCost)
                         {
-                            queue.enqueue(new Node(u, v, cost));
+                            queue.enqueue(neighbor);
                         }
-                    });
+                    }
                 }
             }
             
@@ -248,50 +264,49 @@ export class Board
     // f(u, v, addNeighbor) receives the coordinates of the visited pixel and a function addNeighbor(u, v, cost)
     // which can be used to specify neighboring pixels and the cost to reach them from the current one.  f is
     // never called more than once for the same pixel.
-    dijkstraf(x: number, y: number, maxCost: number, f: (u: number, v: number, addNeighbor: (u: number, v: number, cost: number) => any) => any)
+    dijkstraf(start: Point, maxCost: number, f: (point: Point) => Node[])
     {
-        this.dijkstrafStep(x, y, maxCost, f)(maxCost);
+        this.dijkstrafStep(start, maxCost, f)(maxCost);
     }
 
     // Returns a function that will execute floodf() in steps.
     // Works the same as dijkstrafStep().
-    floodfStep(x: number, y: number, f: (u: number, v: number) => boolean)
+    floodfStep(start: Point, f: (point: Point) => boolean)
     {
-        return this.dijkstrafStep(x, y, Infinity, (u, v, addNeighbor) =>
+        return this.dijkstrafStep(start, Infinity, (point: Point) =>
         {
-            if (f(u, v))
-            {
-                // Visit neighbors in all cardinal directions
-                addNeighbor(u - 1, v, 1);
-                addNeighbor(u + 1, v, 1);
-                addNeighbor(u, v - 1, 1);
-                addNeighbor(u, v + 1, 1);
-            }
+            if (!f(point)) { return []; }
+            return [
+                new Node(point.add(new Point(-1, 0)), 1),
+                new Node(point.add(new Point(1, 0)), 1),
+                new Node(point.add(new Point(0, -1)), 1),
+                new Node(point.add(new Point(0, 1)), 1),
+            ];
         });
     }
 
     // Flood fill - calls f(u, v) for every pixel reachable through a series of horizontal and vertical steps from (x, y) such that f returns true for every
     // other pixel on the path.  f() is never called more than once for the same pixel.
-    floodf(x: number, y: number, f: (u: number, v: number) => boolean)
+    floodf(start: Point, f: (point: Point) => boolean)
     {
-        this.floodfStep(x, y, f)(Infinity);
+        this.floodfStep(start, f)(Infinity);
     }
 
     // Returns a function that will execute growf() in steps.
     // Works the same as dijkstrafStep().
-    growfStep(x: number, y: number, r: number, c: number, f: (u: number, v: number) => boolean)
+    growfStep(start: Point, r: number, c: number, f: (point: Point) => boolean)
     {
         // Grow must start on a pixel of color c
-        if (this.get(x, y) != c)
+        if (this.get(start) != c)
         {
             return (steps: number) => false;
         }
 
-        // Copy the flood fill of c at (x, y) to a board
+        // Copy the flood fill of c at start to a board
         let off = c + 1; // just need any value other than c
         let floodBoard = new Board(this.width, this.height);
         floodBoard.clear(off);
-        floodBoard.drawFlood(this, x, y, c);
+        floodBoard.drawFlood(this, start, c);
 
         // Create a board to draw the grow fill to, initially blank
         let growBoard = new Board(this.width, this.height);
@@ -299,34 +314,36 @@ export class Board
 
         // Search outwards from the flooded region
         let sqrt2 = Math.sqrt(2);
-        return this.dijkstrafStep(x, y, r, (u, v, addNeighbor) =>
+        return this.dijkstrafStep(start, r, (point: Point) =>
         {
-            if (!f(u, v)) { return; }
+            if (!f(point)) { return []; }
 
             // Draw the pixel
-            this.set(u, v, c);
+            this.set(point, c);
 
             // Move through the flood region for free
-            let addNeighbor2 = (u: number, v: number, cost: number) => addNeighbor(u, v, floodBoard.get(u, v) == c ? 0 : cost);
+            let neighbor = (point: Point, cost: number) => new Node(point, floodBoard.get(point) == c ? 0 : cost);
             
             // Visit neighbors in cardinal + diagonal directions
-            addNeighbor2(u + 1, v + 0, 1);
-            addNeighbor2(u + 1, v + 1, sqrt2);
-            addNeighbor2(u + 0, v + 1, 1);
-            addNeighbor2(u - 1, v + 1, sqrt2);
-            addNeighbor2(u - 1, v + 0, 1);
-            addNeighbor2(u - 1, v - 1, sqrt2);
-            addNeighbor2(u + 0, v - 1, 1);
-            addNeighbor2(u + 1, v - 1, sqrt2);
+            return [
+                neighbor(point.add(new Point(1, 0)), 1),
+                neighbor(point.add(new Point(1, 1)), sqrt2),
+                neighbor(point.add(new Point(0, 1)), 1),
+                neighbor(point.add(new Point(1, 1)), sqrt2),
+                neighbor(point.add(new Point(1, 0)), 1),
+                neighbor(point.add(new Point(1, 1)), sqrt2),
+                neighbor(point.add(new Point(0, 1)), 1),
+                neighbor(point.add(new Point(1, 1)), sqrt2)
+            ];
         });
     }
 
     // Sets every pixel to color c that is within r pixels of the continuous region of color c containing (x, y).
     // The continuous region is determined by flood().  The distances of pixels from that region are determined by
     // movement in the 8 cardinal + ordinal directions, a rough approximation of euclidean distance.
-    growf(x: number, y: number, r: number, c: number, f: (u: number, v: number) => boolean)
+    growf(point: Point, r: number, c: number, f: (point: Point) => boolean)
     {
-        this.growfStep(x, y, r, c, f)(Infinity);
+        this.growfStep(point, r, c, f)(Infinity);
     }
 
     //
@@ -334,30 +351,30 @@ export class Board
     //
     
     // Draw a circle of color c centered at (x, y) with radius r
-    drawCircle(x: number, y: number, r: number, c: number)
+    drawCircle(center: Point, r: number, c: number)
     {
-        this.circlef(x, y, r, (u, v) =>
+        this.circlef(center, r, (point: Point) =>
         {
-            this.set(u, v, c);
+            this.set(point, c);
         });
     }
     
     // Draw a box of color c centered at x, y with dimensions w, h
-    drawBox(x: number, y: number, w: number, h: number, c: number)
+    drawBox(center: Point, w: number, h: number, c: number)
     {
         let halfW = Math.floor((w - 1) / 2);
         let halfH = Math.floor((h - 1) / 2);
-        for (let u = Math.max(-halfW, -x); u <= Math.min(halfW, this.width - 1 - x); u++)
+        for (let u = Math.max(-halfW, -center.x); u <= Math.min(halfW, this.width - 1 - center.x); u++)
         {
-            for (let v = Math.max(-halfH, -y); v <= Math.min(halfH, this.height - 1 - y); v++)
+            for (let v = Math.max(-halfH, -center.y); v <= Math.min(halfH, this.height - 1 - center.y); v++)
             {
-                this.set(x + u, y + v, c);
+                this.set(center.add(new Point(u, v)), c);
             }
         }
     }
     
     // Draw a regular polygon of color c inscribed in the circle centered at x, y with radius r, oriented with angle a
-    drawPoly(x: number, y: number, s: number, r: number, a: number, c: number)
+    drawPoly(center: Point, s: number, r: number, a: number, c: number)
     {
         // Point (u, v) is on the plane if au + bv + c = 0
         // Planes are the infinite lines that the edges of the polygon lie on
@@ -368,31 +385,31 @@ export class Board
             let angle = i * 2 * Math.PI / s + a;
             let cos = Math.cos(angle);
             let sin = Math.sin(angle);
-            planes[i] = {a: cos, b: sin, c: -cos * x - y * sin - rInner};
+            planes[i] = {a: cos, b: sin, c: -cos * center.x - center.y * sin - rInner};
         }
 
-        this.circlef(x, y, r, (u, v) =>
+        this.circlef(center, r, (point: Point) =>
         {
             for (let i = 0; i < s; i++)
             {
                 let plane = planes[i];
-                if (plane.a * u + plane.b * v + plane.c > 0)
+                if (plane.a * point.x + plane.b * point.y + plane.c > 0)
                 {
                     return;
                 }
             }
-            this.set(u, v, c);
+            this.set(point, c);
         });
     }
     
     // Returns a stepping function that implements drawLine
-    drawLineStep(x: number, y: number, ex: number, ey: number, p: number, c: number)
+    drawLineStep(start: Point, end: Point, p: number, c: number)
     {
         const clamp = false;
         const single = false;
-        return this.linefStep(x, y, ex, ey, clamp, single, (u, v) => 
+        return this.linefStep(start, end, clamp, single, (point: Point) => 
         {
-            this.set(u, v, c);
+            this.set(point, c);
             if (--p == 0)
             {
                 return false;
@@ -402,43 +419,40 @@ export class Board
     }
     
     // Draw a 1-pixel line of color c, from the center of (x, y) to the center of (ex, ey) or until it reaches p pixels.
-    drawLine(x: number, y: number, ex: number, ey: number, p: number, c: number)
+    drawLine(start: Point, end: Point, p: number, c: number)
     {
-        return this.drawLineStep(x, y, ex, ey, p, c)(Infinity);
+        return this.drawLineStep(start, end, p, c)(Infinity);
     }
     
     // Returns a stepping function that implements paint
     // The function takes the number of steps to execute and returns undefined if stepping should continue, or
     // the paintf result if finished.
-    paintfStep(x: number, y: number, ex: number, ey: number, r: number, p: number, c: number, f: (u: number, v: number) => boolean)
+    paintfStep(start: Point, end: Point, r: number, p: number, c: number, f: (point: Point) => boolean): PaintStep
     {
         const clamp = true;
         const single = false;
         const mask = this.buffer();
-        const lineStep = this.linefStep(x, y, ex, ey, clamp, single, (u, v) => 
+        let current = start;
+        const lineStep = this.linefStep(start, end, clamp, single, (point: Point) => 
         {
             // Check if the line gets blocked
-            if (!f(u, v))
-            {
-                return false;
-            }
+            if (!f(point)) { return false; }
 
             // Remember the last successful line pixel
-            x = u;
-            y = v;
+            current = point;
 
             // Draw a circle centered at the line pixel onto a mask, then floodfill the mask
             mask.clear(0);
-            mask.drawCircle(u, v, r, 1);
-            mask.floodf(u, v, (u, v) =>
+            mask.drawCircle(point, r, 1);
+            mask.floodf(point, (point: Point) =>
             {
                 // Check if the pixel is within the circle and not blocked by f
-                if (mask.get(u, v) == 1 && f(u, v))
+                if (mask.get(point) == 1 && f(point))
                 {
                     // Only count pixels that are not already set
-                    if (this.get(u, v) != c)
+                    if (this.get(point) != c)
                     {
-                        this.set(u, v, c);
+                        this.set(point, c);
                         p--;
                     }
                     return true;
@@ -462,7 +476,7 @@ export class Board
             {
                 return undefined;
             }
-            return { x: x, y: y, p: p };
+            return new PaintResult(current, p);
         }
     }
     
@@ -474,32 +488,32 @@ export class Board
     // Returns a struct with:
     // - (x, y) the last successfully drawn point on the line
     // - p the number of pixels left over (may be negative)
-    paintf(x: number, y: number, ex: number, ey: number, r: number, p: number, c: number, f: (u: number, v: number) => boolean)
+    paintf(start: Point, end: Point, r: number, p: number, c: number, f: (point: Point) => boolean): PaintResult
     {
-        return this.paintfStep(x, y, ex, ey, r, p, c, f)(Infinity);
+        return this.paintfStep(start, end, r, p, c, f)(Infinity) as PaintResult;
     }
     
     // Draw a crosshair centered at (x, y) with radius r and color c
-    drawCross(x: number, y: number, r: number, c: number)
+    drawCross(center: Point, r: number, c: number)
     {
-        for (let u = Math.max(-r, -x); u <= Math.min(r, this.width - 1 - x); u++)
+        for (let u = Math.max(-r, -center.x); u <= Math.min(r, this.width - 1 - center.x); u++)
         {
-            this.set(x + u, y, c);
+            this.set(center.add(new Point(u, 0)), c);
         }
-        for (let v = Math.max(-r, -y); v <= Math.min(r, this.height - 1 - y); v++)
+        for (let v = Math.max(-r, -center.y); v <= Math.min(r, this.height - 1 - center.y); v++)
         {
-            this.set(x, y + v, c);
+            this.set(center.add(new Point(0, v)), c);
         }
     }
 
     // Copies the continuous (by cardinal movement) c-colored region of src containing (x, y) to this
-    drawFlood(src: Board, x: number, y: number, c: number)
+    drawFlood(src: Board, start: Point, c: number)
     {
-        src.floodf(x, y, (u: number, v: number) =>
+        src.floodf(start, (point: Point) =>
         {
-            if (src.get(u, v) == c)
+            if (src.get(point) == c)
             {
-                this.set(u, v, c);
+                this.set(point, c);
                 return true;
             }
             return false;
@@ -514,21 +528,22 @@ export class Board
         {
             for (let v = 0; v < this.height; v++)
             {
-                let c = (src.get(u, v) == mask && (
-                    src.get(u - 1, v) != mask || 
-                    src.get(u + 1, v) != mask || 
-                    src.get(u, v - 1) != mask || 
-                    src.get(u, v + 1) != mask))
+                let point = new Point(u, v);
+                let c = (src.get(point) == mask && (
+                    src.get(new Point(u - 1, v)) != mask || 
+                    src.get(new Point(u + 1, v)) != mask || 
+                    src.get(new Point(u, v - 1)) != mask || 
+                    src.get(new Point(u, v + 1)) != mask))
                     ? on : off;
-                this.set(u, v, c);
+                this.set(point, c);
             }
         }
     }
 
     // Push pixels outwards from a central point
-    dynamite(x: number, y: number, r: number, e: number)
+    dynamite(center: Point, r: number, e: number)
     {
-        let step = this.dynamiteStep(x, y, r, e);
+        let step = this.dynamiteStep(center, r, e);
         while (step()) {}
         return false;
     }
@@ -536,7 +551,7 @@ export class Board
     // Return a stepping function that incrementally applies dynamite().
     // Call the stepping function until it returns false.
     // This can be used to animate the process.
-    dynamiteStep(x: number, y: number, r: number, e: number)
+    dynamiteStep(center: Point, r: number, e: number)
     {
         let area = Math.PI * r * r;
 
@@ -556,25 +571,22 @@ export class Board
             for (; i < n; i++)
             {
                 let angle = i * anglePerStep;
-                let xDir = Math.cos(angle);
-                let yDir = Math.sin(angle);
+                let dir = new Point(Math.cos(angle), Math.sin(angle));
                 let rInt = Math.floor(r / rounds);
                 let queue = new Array(Math.floor(rInt)).fill(e);
                 let pressure = 0.5;
-                let ex = Math.floor(x + xDir * r * 100);
-                let ey = Math.floor(y + yDir * r * 100);
+                let end = center.add(dir.mul(new Point(r * 100))).floor();
                 let rSq = r * r;
 
                 const clamp = true;
                 const single = true;
-                this.linefStep(x, y, ex, ey, clamp, single, (u, v) =>
+                this.linefStep(center, end, clamp, single, (point: Point) =>
                 {
-                    let xDiff = u - x;
-                    let yDiff = v - y;
-                    let distSq = xDiff * xDiff + yDiff * yDiff;
+                    let diff = point.sub(center);
+                    let distSq = diff.dot(diff);
 
-                    let c = this.get(u, v);
-                    this.set(u, v, queue.shift());
+                    let c = this.get(point);
+                    this.set(point, queue.shift());
                     if (distSq > rSq)
                     {
                         if (c == e)
@@ -717,7 +729,7 @@ export class Board
         {
             for (let j = 0; j < this.height; j++)
             {
-                let color = palette[this.get(i, j)??0];
+                let color = palette[this.get(new Point(i, j))??0];
                 let k = j * pitch * scale + i * pixel * scale;
                 for (let u = 0; u < scale; u++)
                 {

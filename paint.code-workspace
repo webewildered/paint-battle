@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"search.exclude": {
+			"**/out/*": true,
+			"**/public/bundle.js": true,
+			"**/public/testbundle.js": true
+		}
+	}
+}

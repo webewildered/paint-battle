@@ -1,5 +1,6 @@
 // This requires the socket.io.js client in the global scope
 import { Client } from './client';
+import { Rules } from './game'
 import { Socket } from 'socket.io-client';
 import * as io from 'socket.io-client';
 
@@ -24,12 +25,7 @@ $(function()
     let key = '';
     let localPlayerId = -1;
     let lobbyPlayers: LobbyPlayer[] = [];
-    
-    let socket: Socket = io();
-    if (!socket)
-    {
-        throw new Error('no socket'); // TODO.ts
-    }
+    let socket = io() as Socket;
 
     //
     // Helper functions
@@ -60,15 +56,14 @@ $(function()
         });
     }
 
-    function startGame(rules: any) // TODO.ts rules type
+    function startGame(rules: Rules)
     {
         $('#lobby').hide();
         $('#playerList').empty();
 
         let playerNames: string[] = [];
         lobbyPlayers.forEach(player => playerNames.push(player.name));
-        let client = new Client();
-        client.begin(socket, playerNames, localPlayerId, rules);
+        new Client(socket, playerNames, localPlayerId, rules);
     }
     
     // Join an existing lobby or create a new one
@@ -90,7 +85,7 @@ $(function()
             joinForm.hide();
             localForm.hide();
             let numPlayers = $('#localPlayersInput').val() as number;
-            let rules = { blocking: $('#blockingRuleLocal').is(':checked') };
+            let rules: Rules = { blocking: $('#blockingRuleLocal').is(':checked') };
             localPlayerId = -1;
             lobbyPlayers = [];
             for (let i = 0; i < numPlayers; i++)

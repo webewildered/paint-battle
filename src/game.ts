@@ -1,6 +1,142 @@
-import { CardType } from './CardType';
-import { Board } from './board';
+import { Point, PaintStep, PaintResult, Board } from './board';
 const EventEmitter = require('events');
+
+export enum CardType
+{
+    Circle,
+    Box,
+    Poly,
+    Line,
+    Paint,
+    Grow,
+    Eraser,
+    Dynamite
+}
+
+export class Card
+{
+    constructor(type: CardType, name: string, radius: number = 0)
+    {
+        this.type = type;
+        this.name = name;
+        this._radius = radius;
+    }
+
+    get radius(): number
+    {
+        if (this._radius <= 0)
+        {
+            throw new Error('Card "' + this.name + '" does not have a valid radius');
+        }
+        return this._radius;
+    }
+    
+    type: CardType;
+    name: string;
+    private _radius: number;
+}
+
+export class CircleCard extends Card
+{
+    constructor(radius: number)
+    {
+        super(CardType.Circle, 'Circle', radius);
+    }
+}
+
+export class BoxCard extends Card
+{
+    constructor(width: number, height: number)
+    {
+        super(CardType.Box, 'Box');
+        this.width = width;
+        this.height = height;
+    }
+
+    width: number;
+    height: number;
+}
+
+export class PolyCard extends Card
+{
+    constructor(sides: number, radius: number, angle: number)
+    {
+        super(CardType.Poly, 'Poly', radius);
+        this.sides = sides;
+        this.angle = angle;
+    }
+
+    sides: number;
+    angle: number;
+}
+
+export class LineCard extends Card
+{
+    constructor(pixels: number)
+    {
+        super(CardType.Line, 'Line');
+        this.pixels = pixels;
+    }
+
+    pixels: number;
+}
+
+export class PaintCard extends Card
+{
+    constructor(radius: number, pixels: number)
+    {
+        super(CardType.Paint, 'Paint', radius);
+        this.pixels = pixels;
+    }
+
+    pixels: number;
+}
+
+export class GrowCard extends Card
+{
+    constructor(radius: number)
+    {
+        super(CardType.Grow, 'Grow', radius);
+    }
+}
+
+export class EraserCard extends Card
+{
+    constructor(radius: number)
+    {
+        super(CardType.Eraser, 'Eraser', radius);
+    }
+}
+
+export class DynamiteCard extends Card
+{
+    constructor(radius: number)
+    {
+        super(CardType.Dynamite, 'Dynamite', radius);
+    }
+}
+
+export class Rules
+{
+    blocking: boolean = false;
+}
+
+export class Reveal
+{
+    constructor(
+        public cardId: number,
+        public deckId: number)
+    {}
+}
+
+export class Action
+{
+    constructor(
+        public cardId: number,
+        public points: Point[],
+        public reveals: Reveal[] = [])
+    {}
+}
 
 //
 // Events
@@ -12,7 +148,12 @@ const EventEmitter = require('events');
 //
 export class Game extends EventEmitter
 {
-    constructor(numPlayers: number, shuffle: boolean, rules: any) // TODO.ts rules struct
+    deck: Card[];
+    rules: Rules;
+    board: Board;
+    // TODO.ts fill out the rest of the members
+
+    constructor(numPlayers: number, shuffle: boolean, rules: Rules)
     {
         super();
 
@@ -39,20 +180,21 @@ export class Game extends EventEmitter
         const countMed = [0, 5, 5, 5, 6, 7, 8][numPlayers];
         const countHigh = [0, 7, 7, 7, 8, 8, 9][numPlayers];
 
-        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.BOX, width: 45, height: 21, name: 'Box' }));
-        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.BOX, width: 21, height: 45, name: 'Box' }));
-        this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.LINE, pixels: 140, name: 'Line' }));
-        this.deck = this.deck.concat(Array(countMed).fill({ type: CardType.GROW, radius: 4, name: 'Grow' }));
-        this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.PAINT, radius: 4, pixels: 600, name: 'Brush' }));
-        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 3, radius: 25.5, angle: 0.2, name: 'Polygon' }));
-        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 5, radius: 23.5, angle: 0.4, name: 'Polygon' }));
-        this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.POLY, sides: 7, radius: 21.5, angle: 0.6, name: 'Polygon' }));
-        this.deck = this.deck.concat(Array(countHigh).fill({ type: CardType.DYNAMITE, radius: 20.5 }));
+        let addCard = (count: number, card: Card) => { this.deck = this.deck.concat(Array<Card>(count).fill(card)); }
+        addCard(countLow, new BoxCard(45, 21));
+        addCard(countLow, new BoxCard(21, 45));
+        addCard(countMed, new LineCard(140));
+        addCard(countMed, new GrowCard(4));
+        addCard(countHigh, new PaintCard(4, 600));
+        addCard(countLow, new PolyCard(3, 25.5, 0.2));
+        addCard(countLow, new PolyCard(5, 23.5, 0.4));
+        addCard(countLow, new PolyCard(7, 21.5, 0.6));
+        addCard(countHigh, new DynamiteCard(20.5));
         
         // Eraser doesn't do anything with blocking enabled
         if (!rules.blocking)
         {
-            this.deck = this.deck.concat(Array(countLow).fill({ type: CardType.ERASER, radius: 30.5, name: 'Eraser' }));
+            addCard(countLow, new EraserCard(30.5));
         }
 
         // Shuffle the deck on server (shuffle = true), mark all cards hidden on client (shuffle = false)
@@ -93,7 +235,7 @@ export class Game extends EventEmitter
         this.queue = [];
     }
 
-    getCard(cardId: number)
+    getCard(cardId: number): Card|undefined
     {
         return this.deck[this.shuffle[cardId]]
     }
@@ -111,7 +253,7 @@ export class Game extends EventEmitter
         {
             let x = Math.floor(center + Math.cos(i * Math.PI * 2 / numPlayers) * this.size / 3);
             let y = Math.floor(center + Math.sin(i * Math.PI * 2 / numPlayers) * this.size / 3);
-            this.board.drawCircle(x, y, 8.5, i);
+            this.board.drawCircle(new Point(x, y), 8.5, i);
         }
 
         this.emit('updateBoard');
@@ -129,17 +271,17 @@ export class Game extends EventEmitter
         this.nextTurn();
     }
 
-    reveal(cardId: number, deckId: number)
+    reveal(reveal: Reveal)
     {
-        this.shuffle[cardId] = deckId;
-        this.emit('reveal', cardId);
+        this.shuffle[reveal.cardId] = reveal.deckId;
+        this.emit('reveal', reveal.cardId);
     }
 
-    isOpen(u: number, v: number, c: number)
+    isOpen(point: Point, c: number)
     {
         if (this.rules.blocking)
         {
-            let b = this.board.get(u, v);
+            let b = this.board.get(point);
             return (b == c || b == this.players.length);
         }
         return true;
@@ -149,10 +291,12 @@ export class Game extends EventEmitter
     // as long as it returns true. Once it returns false, the play is complete.
     // throws on failure -- this should not happen but might if there is a bug or if a player
     // is trying to cheat.
-    play(action: any = undefined): (()=>boolean)|undefined //TODO.ts action struct
+    play(actionIn: Action|undefined = undefined): (()=>boolean)|undefined
     {
-        if (action)
+        let action: Action;
+        if (actionIn)
         {
+            action = actionIn;
             this.queue.push(action);
             if (this.queue.length > 1)
             {
@@ -168,26 +312,39 @@ export class Game extends EventEmitter
             return undefined;
         }
 
+        // Validate the action struct
+        if (!Number.isFinite(action.cardId) || !Array.isArray(action.points) || action.points.length > 1000 || 
+            !Array.isArray(action.reveals) || action.reveals.length > 1000)
+        {
+            throw 'Game.play() failed: action is invalid';
+        }
+
         // Make sure the card belongs to the current player
         if (!this.players[this.currentPlayer].hand.includes(action.cardId))
         {
-            throw 'Game.play() failed';
+            throw 'Game.play() failed: player does not have the card';
         }
 
         // Get the card data
         let card = this.getCard(action.cardId);
-        if (card == null)
+        if (!card)
         {
-            throw 'Game.play() failed';
+            throw 'Game.play() failed: card is invalid';
+        }
+
+        // Do the reveals
+        for (const reveal of action.reveals)
+        {
+            this.reveal(reveal);
         }
 
         // Returns a stepping function that flood fills the board from x, y with color c, restricted to
         // pixels that are set to 1 in the mask and that are set to either c or this.players.length on the board
-        let floodMaskStep = (mask: Board, x: number, y: number, c: number) => mask.floodfStep(action.x, action.y, (u, v) =>
+        let floodMaskStep = (mask: Board, start: Point, c: number) => mask.floodfStep(action.points[0], (point: Point) =>
         {
-            if (mask.get(u, v) == 1 && this.isOpen(u, v, c))
+            if (mask.get(point) == 1 && this.isOpen(point, c))
             {
-                this.board.set(u, v, c);
+                this.board.set(point, c);
                 return true;
             }
             return false;
@@ -198,59 +355,61 @@ export class Game extends EventEmitter
         let c = this.currentPlayer;
         switch (card.type)
         {
-            case CardType.CIRCLE:
-            case CardType.ERASER:
+            case CardType.Circle:
+            case CardType.Eraser:
             {
-                if (!this.startOk(action.x, action.y))
+                if (action.points.length != 1 || !this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed';
+                    throw 'Game.play() failed: points are invalid';
                 }
                 
-                let color = (card.type == CardType.CIRCLE) ? c : this.players.length;
+                let color = (card.type == CardType.Circle) ? c : this.players.length;
                 let mask = this.board.buffer(0);
-                mask.drawCircle(action.x, action.y, card.radius, 1);
-                step = floodMaskStep(mask, action.x, action.y, color); // TODO need to rethink eraser
+                mask.drawCircle(action.points[0], card.radius, 1);
+                step = floodMaskStep(mask, action.points[0], color);
                 break;
             }
-            case CardType.BOX:
+            case CardType.Box:
             {
-                if (!this.startOk(action.x, action.y))
+                if (action.points.length != 1 || !this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed';
+                    throw 'Game.play() failed: points are invalid';
                 }
                 let mask = this.board.buffer(0);
-                mask.drawBox(action.x, action.y, card.width, card.height, 1);
-                step = floodMaskStep(mask, action.x, action.y, c);
+                let boxCard = card as BoxCard;
+                mask.drawBox(action.points[0], boxCard.width, boxCard.height, 1);
+                step = floodMaskStep(mask, action.points[0], c);
                 break;
             }
-            case CardType.POLY:
+            case CardType.Poly:
             {
-                if (!this.startOk(action.x, action.y))
+                if (action.points.length != 1 || !this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed';
+                    throw 'Game.play() failed: points are invalid';
                 }
                 let mask = this.board.buffer(0);
-                mask.drawPoly(action.x, action.y, card.sides, card.radius, card.angle, 1);
-                step = floodMaskStep(mask, action.x, action.y, c);
+                let polyCard = card as PolyCard;
+                mask.drawPoly(action.points[0], polyCard.sides, polyCard.radius, polyCard.angle, 1);
+                step = floodMaskStep(mask, action.points[0], c);
                 break;
             }
-            case CardType.LINE:
+            case CardType.Line:
             {
-                if (!this.startOk(action.x, action.y) || action.x2 == null || action.y2 == null)
+                if (action.points.length != 2 || !this.startOk(action.points[0]) || !this.coordsOk(action.points[1]))
                 {
-                    throw 'Game.play() failed';
+                    throw 'Game.play() failed: points are invalid';
                 }
-                //let lineStep = this.board.drawLineStep(action.x, action.y, action.x2, action.y2, card.pixels, c);
+
                 const clamp = false;
                 const single = false;
-                let p = card.pixels;
-                let lineStep = this.board.linefStep(action.x, action.y, action.x2, action.y2, clamp, single, (u: number, v: number) => 
+                let p = (card as LineCard).pixels;
+                let lineStep = this.board.linefStep(action.points[0], action.points[1], clamp, single, (point: Point) => 
                 {
-                    if (!this.isOpen(u, v, c))
+                    if (!this.isOpen(point, c))
                     {
                         return false;
                     }
-                    this.board.set(u, v, c);
+                    this.board.set(point, c);
                     return --p > 0;
                 });
                 step = () =>
@@ -259,25 +418,26 @@ export class Game extends EventEmitter
                 }
                 break;
             }
-            case CardType.PAINT:
+            case CardType.Paint:
             {
-                if (action.points == null || action.points.length == 0 || action.points.length > card.pixels || !this.startOk(action.points[0].x, action.points[0].y))
+                let paintCard = card as PaintCard;
+                if (action.points.length == 0 || action.points.length > paintCard.pixels || !this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed';
+                    throw 'Game.play() failed: points are invalid';
                 }
                 for (let i = 1; i < action.points.length; i++)
                 {
-                    if (!this.coordsOk(action.points[i].x, action.points[i].y))
+                    if (!this.coordsOk(action.points[i]))
                     {
-                        throw 'Game.play() failed';
+                        throw 'Game.play() failed: points are invalid';
                     }
                 }
                 
-                let p = card.pixels;
-                let i = 0;
-                let paintBoard = this.board.buffer(this.players.length);
-                let paintStep: any = undefined; // TODO.ts paint step type? or result struct at least
-                let paintPoint = action.points[0];
+                let pixels = paintCard.pixels; // Number of pixels left
+                let i = 0; // Current index in action.points
+                let paintPoint = action.points[0]; // position to draw from
+                let paintBoard = this.board.buffer(this.players.length); // Temporary board where the paint is accumulated
+                let paintStep: PaintStep | undefined = undefined;
                 step = () =>
                 {
                     for (let k = 0; k < 5; k++) // 5 steps
@@ -289,13 +449,12 @@ export class Game extends EventEmitter
                             {
                                 break;
                             }
-                            if (p <= 0)
+                            if (pixels <= 0)
                             {
                                 throw 'Game.play() failed'; // too many points
                             }
                             let nextPoint = action.points[i++];
-                            paintStep = paintBoard.paintfStep(paintPoint.x, paintPoint.y, nextPoint.x, nextPoint.y, card.radius, p, c,
-                                (u: number, v: number) => this.isOpen(u, v, c));
+                            paintStep = paintBoard.paintfStep(paintPoint, nextPoint, paintCard.radius, pixels, c, (point: Point) => this.isOpen(point, c));
                         }
 
                         // Execute one step of the paint
@@ -304,41 +463,41 @@ export class Game extends EventEmitter
                         {
                             // If the segment is done, update the pixel count and mark paintStep undefined to move to the next segment
                             paintStep = undefined;
-                            p = Math.min(result.p, p - 1);
-                            paintPoint = { x: result.x, y: result.y };
+                            pixels = Math.min(result.pixels, pixels - 1);
+                            paintPoint = result.point;
                         }
                     }
 
                     this.board.add(paintBoard, c);
-                    return (paintStep || i < action.points.length);
+                    return (!!paintStep || i < action.points.length);
                 }
                 break;
             }
-            case CardType.GROW:
+            case CardType.Grow:
             {
-                if (!this.startOk(action.x, action.y))
+                if (!this.startOk(action.points[0]))
                 {
                     throw 'Game.play() failed';
                 }
                 
-                let growStep = this.board.growfStep(action.x, action.y, card.radius, c, (u: number, v: number) => this.isOpen(u, v, c));
+                let growStep = this.board.growfStep(action.points[0], (card as GrowCard).radius, c, (point: Point) => this.isOpen(point, c));
                 step = () =>
                 {
                     return growStep(1);
                 }
                 break;
             }
-            case CardType.DYNAMITE:
+            case CardType.Dynamite:
             {
-                if (!this.startOk(action.x, action.y))
+                if (!this.startOk(action.points[0]))
                 {
                     throw 'Game.play() failed';
                 }
-                step = this.board.dynamiteStep(action.x, action.y, card.radius, this.players.length);
+                step = this.board.dynamiteStep(action.points[0], (card as DynamiteCard).radius, this.players.length);
                 break;
             }
             default:
-                throw 'Game.play() failed';
+                throw 'Game.play() failed: card type is invalid'; // should never happen even if an invalid message is received
         }
 
         // Reveal the card played
@@ -406,13 +565,13 @@ export class Game extends EventEmitter
         }
     }
 
-    coordsOk(x: number, y: number)
+    coordsOk(point: Point)
     {
-        return x > -100000 && x < 100000 && y > -100000 && y < 100000;
+        return point.x > -100000 && point.x < 100000 && point.y > -100000 && point.y < 100000;
     }
 
-    startOk(x: number, y: number)
+    startOk(point: Point)
     {
-        return (this.board.get(x, y) == this.currentPlayer || this.board.count(this.players.length + 1)[this.currentPlayer] == 0);
+        return (this.board.get(point) == this.currentPlayer || this.board.count(this.players.length + 1)[this.currentPlayer] == 0);
     }
 }

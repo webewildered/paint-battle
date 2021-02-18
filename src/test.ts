@@ -1,4 +1,4 @@
-import { Board } from './board.js';
+import { Point, Board } from './board.js';
 
 $(function()
 {
@@ -36,7 +36,7 @@ $(function()
     let board = new Board(299, 299);
     board.clear(e);
     //board.drawCircle(149, 149, 25.5, c);
-    board.drawBox(149, 149, 50, 30, c);
+    board.drawBox(new Point(149, 149), 50, 30, c);
 
     let scale = 2;
     let sprite = new PIXI.Sprite;
@@ -52,7 +52,7 @@ $(function()
     text.x = sprite.x + 10;
     text.text = board.count(0)[0].toString();
 
-    let step = board.dynamite(149, 149, 30, e);
+    let step = board.dynamite(new Point(149, 149), 30, e);
     sprite.on('mousedown', (event: PIXI.InteractionEvent) =>
     {
         //step();

@@ -1,7 +1,7 @@
-import { Game } from './game';
-import { Socket } from 'socket.io';
+import { Rules, Action, Reveal, Game } from './game';
+import { Socket, Server } from 'socket.io';
 
-module.exports = function(http: any) //TODO.ts http type
+module.exports = function(http: Server)
 {
     var io = require('socket.io')(http);
     var rooms = new Map<string, Room>();
@@ -149,10 +149,10 @@ module.exports = function(http: any) //TODO.ts http type
             });
 
             // Listen for game start
-            socket.on('start', (rulesIn) =>
+            socket.on('start', (rulesIn: Rules) =>
             {
                 // Validate rules
-                let rules = {
+                let rules: Rules = {
                     blocking: (rulesIn && rulesIn.blocking)
                 };
 
@@ -185,13 +185,12 @@ module.exports = function(http: any) //TODO.ts http type
                 const shuffle = true;
                 let game = new Game(room.players.length, shuffle, rules);
                 room.game = game;
-                let reveals: any[] = []; // List of reveals to send with the next play message
-                // TODO.ts reveal type
+                let reveals: Reveal[] = []; // List of reveals to send with the next play message
 
                 game.on('deal', (playerId: number, cardId: number) =>
                 {
                     let player = room.players[playerId];
-                    player.socket.emit('reveal', cardId, game.shuffle[cardId]);
+                    player.socket.emit('reveal', new Reveal(cardId, game.shuffle[cardId]));
                     console.log(key + ':' + playerId + ' reveal ' + cardId);
                 });
 
@@ -204,7 +203,7 @@ module.exports = function(http: any) //TODO.ts http type
                 {
                     // On a player's turn, listen for their action
                     let player = room.players[playerId];
-                    player.socket.on('play', (action) =>
+                    player.socket.on('play', (action: Action) =>
                     {
                         console.log(key + ':' + playerId + ' play');
 
@@ -215,6 +214,7 @@ module.exports = function(http: any) //TODO.ts http type
                         let step;
                         try
                         {
+                            action.reveals = []; // Client may not send the server reveals
                             step = game.play(action);
                             if (!step) { throw new Error('no step'); }
                         }
