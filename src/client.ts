@@ -446,7 +446,7 @@ export class Client extends EventEmitter
                     if (playPoint)
                     {
                         this.off('boardClick', listener);
-                        playAction(new Action(cardId, [point]));
+                        playAction(new Action(cardId, [playPoint]));
                         this.clearCursor();
                     }
                 }
@@ -459,7 +459,7 @@ export class Client extends EventEmitter
                     if (playPoint)
                     {
                         this.off('boardClick', listener);
-                        playAction(new Action(cardId, [point]));
+                        playAction(new Action(cardId, [playPoint]));
                         this.clearCursor();
                     }
                 }
@@ -470,7 +470,7 @@ export class Client extends EventEmitter
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
-                    if (point == null)
+                    if (playPoint == null)
                     {
                         return;
                     }
@@ -483,7 +483,7 @@ export class Client extends EventEmitter
                     {
                         let point2 = this.getBoardPosition();
                         this.overlayBoard.clear(this.previewPalette.length - 1);
-                        this.overlayBoard.drawLine(point, point2, (card as LineCard).pixels, 0);
+                        this.overlayBoard.drawLine(playPoint!, point2, (card as LineCard).pixels, 0);
                         this.updateOverlayBoard();
                     }
                     app.ticker.add(update);
@@ -494,7 +494,7 @@ export class Client extends EventEmitter
                         // 2nd point
                         this.off('boardClick', listener);
                         app.ticker.remove(update);
-                        playAction(new Action(cardId, [point, point2]));
+                        playAction(new Action(cardId, [playPoint!, point2]));
                         this.endPreview();
                     };
                     this.on('boardClick', listener);
@@ -590,7 +590,7 @@ export class Client extends EventEmitter
                         this.off('boardClick', listener);
                         app.ticker.remove(update);
                         
-                        playAction(new Action(cardId, [point]));
+                        playAction(new Action(cardId, [playPoint]));
                         this.endPreview();
                     }
                 }
@@ -605,7 +605,7 @@ export class Client extends EventEmitter
                     {
                         // Animate the explosion
                         this.off('boardClick', listener);
-                        playAction(new Action(cardId, [point]));
+                        playAction(new Action(cardId, [playPoint]));
                         this.clearCursor();
                     }
                 }

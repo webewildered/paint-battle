@@ -46,15 +46,10 @@ export class CircleCard extends Card
 
 export class BoxCard extends Card
 {
-    constructor(width: number, height: number)
+    constructor(public width: number, public height: number)
     {
         super(CardType.Box, 'Box');
-        this.width = width;
-        this.height = height;
     }
-
-    width: number;
-    height: number;
 }
 
 export class PolyCard extends Card
@@ -138,6 +133,11 @@ export class Action
     {}
 }
 
+class Player
+{
+    constructor(public hand: number[] = [], public disconnected: boolean = false) {}
+}
+
 //
 // Events
 // updateBoard(): this.board has changed
@@ -148,10 +148,15 @@ export class Action
 //
 export class Game extends EventEmitter
 {
-    deck: Card[];
     rules: Rules;
     board: Board;
-    // TODO.ts fill out the rest of the members
+    size: number;
+    deck: Card[];
+    shuffle: number[];
+    pile: number[];
+    players: Player[];
+    queue: Action[];
+    numDisconnected: number;
 
     constructor(numPlayers: number, shuffle: boolean, rules: Rules)
     {
@@ -227,9 +232,9 @@ export class Game extends EventEmitter
         this.players = new Array(numPlayers);
         for (let i = 0; i < numPlayers; i++)
         {
-            this.players[i] = { hand: [], disconnected: false };
+            this.players[i] = new Player();
         }
-        this.numConnected--;
+        this.numDisconnected = 0;
 
         // Queue of pending actions
         this.queue = [];
@@ -319,10 +324,26 @@ export class Game extends EventEmitter
             throw 'Game.play() failed: action is invalid';
         }
 
+        // Validate and rebuild points, in case they came from a remote connection
+        for (let i = 0; i < action.points.length; i++)
+        {
+            if (!this.coordsOk(action.points[i]))
+            {
+                throw 'Game.play() failed: points are invalid';
+            }
+            action.points[i] = new Point(action.points[i].x, action.points[i].y);
+        }
+
         // Make sure the card belongs to the current player
         if (!this.players[this.currentPlayer].hand.includes(action.cardId))
         {
             throw 'Game.play() failed: player does not have the card';
+        }
+
+        // Do the reveals
+        for (const reveal of action.reveals)
+        {
+            this.reveal(reveal);
         }
 
         // Get the card data
@@ -330,12 +351,6 @@ export class Game extends EventEmitter
         if (!card)
         {
             throw 'Game.play() failed: card is invalid';
-        }
-
-        // Do the reveals
-        for (const reveal of action.reveals)
-        {
-            this.reveal(reveal);
         }
 
         // Returns a stepping function that flood fills the board from x, y with color c, restricted to
@@ -395,7 +410,7 @@ export class Game extends EventEmitter
             }
             case CardType.Line:
             {
-                if (action.points.length != 2 || !this.startOk(action.points[0]) || !this.coordsOk(action.points[1]))
+                if (action.points.length != 2 || !this.startOk(action.points[0]))
                 {
                     throw 'Game.play() failed: points are invalid';
                 }
@@ -424,13 +439,6 @@ export class Game extends EventEmitter
                 if (action.points.length == 0 || action.points.length > paintCard.pixels || !this.startOk(action.points[0]))
                 {
                     throw 'Game.play() failed: points are invalid';
-                }
-                for (let i = 1; i < action.points.length; i++)
-                {
-                    if (!this.coordsOk(action.points[i]))
-                    {
-                        throw 'Game.play() failed: points are invalid';
-                    }
                 }
                 
                 let pixels = paintCard.pixels; // Number of pixels left
@@ -526,12 +534,11 @@ export class Game extends EventEmitter
     // Handle disconnects
     removePlayer(playerId: number)
     {
-        if (--this.numConnected == 1)
+        this.players[playerId].disconnected = true;
+        if (++this.numDisconnected == this.players.length - 1)
         {
             // TODO game is over
         }
-
-        this.players[playerId].disconnected = true;
 
         // TODO - handle if it's that player's turn
     }
@@ -541,17 +548,17 @@ export class Game extends EventEmitter
     //
 
     // Deal one card from the pile to a player
-    deal(playerId: number)
+    private deal(playerId: number)
     {
         if (this.pile.length)
         {
-            let cardId = this.pile.pop();
+            let cardId = this.pile.pop()!;
             this.emit('deal', playerId, cardId);
             this.players[playerId].hand.push(cardId);
         }
     }
 
-    nextTurn()
+    private nextTurn()
     {
         for (let i = 0; i < this.players.length; i++)
         {
@@ -565,7 +572,7 @@ export class Game extends EventEmitter
         }
     }
 
-    coordsOk(point: Point)
+    private coordsOk(point: Point)
     {
         return point.x > -100000 && point.x < 100000 && point.y > -100000 && point.y < 100000;
     }
