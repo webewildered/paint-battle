@@ -1,16 +1,14 @@
 import PriorityQueue from "priorityqueue";
 
-export class Point extends Array<number>
+export class Point
 {
-    constructor(x: number, y: number = x)
+    constructor(
+        public readonly x: number,
+        public readonly y: number = x)
     {
-        super(...[x, y]);
     }
     
-    get x(): number { return this[0]; }
-	get y(): number { return this[1]; }
-    set x(a: number) { this[0] = a; }
-    set y(a: number) { this[1] = a; }
+    get array() { return [this.x, this.y]; }
 
     unary(f: (a: number) => number): Point
     {
@@ -135,18 +133,19 @@ export class Board
     {
         // Line origin and direction
         let dir = end.sub(start);
-        let pos = start.floor();
-        end = end.clone();
+        let pos = start.floor().array; // Current point on the line
+        let stop = end.array; // Line stops if it reaches this point
 
         // absolute value and sign of direction
-        let absDir = dir.abs();
-        let absSlope = new Point(absDir.y / absDir.x, absDir.x / absDir.y); // dy/dx, dx/dy
-        let signDir = dir.sign();
+        let absDir = dir.abs().array;
+        let absSlope = [absDir[1] / absDir[0], absDir[0] / absDir[1]]; // dy/dx, dx/dy
+        let signDir = dir.sign().array;
 
         // Distance until the next pixel in each direction
-        let dist = new Point(0.5, 0.5);
+        let dist = [0.5, 0.5];
+        const size = this.size.array;
 
-        // Previous step was in the x direction, y direction, or neither
+        // Previous step was in the x direction (0), y direction (1), or neither (nMove)
         const nMove = -1;
         let lastMove = nMove;
 
@@ -155,7 +154,7 @@ export class Board
             while (numSteps > 0)
             {
                 // Check if the end of the line was reached
-                let final = pos.equal(end);
+                let final = (pos[0] == stop[0] && pos[1] == stop[1]);
                 if (final)
                 {
                     lastMove = nMove; // Always draw the end pixel
@@ -174,7 +173,7 @@ export class Board
                     }
                     else
                     {
-                        if (!f(pos))
+                        if (!f(new Point(pos[0], pos[1])))
                         {
                             final = true;
                             return;
@@ -189,13 +188,13 @@ export class Board
                     pos[i] += signDir[i];
                 
                     // Check for collision with left/right edge
-                    if (pos[i] < 0 || pos[i] >= this.size[i])
+                    if (pos[i] < 0 || pos[i] >= size[i])
                     {
                         if (clamp && absDir[j] != 0)
                         {
-                            pos[i] = Math.min(Math.max(pos[i], 0), this.size[i] - 1);
-                            end[i] = pos[i];
-                            absDir[i] = absSlope.x = absSlope.y = 0;
+                            pos[i] = Math.min(Math.max(pos[i], 0), size[i] - 1);
+                            stop[i] = pos[i];
+                            absDir[i] = absSlope[0] = absSlope[1] = 0;
                         }
                         else
                         {
@@ -205,7 +204,8 @@ export class Board
                 }
 
                 // Check whether the line crosses x or y boundary next and move in that direction
-                move(dist.x * absDir.y < dist.y * absDir.x ? 0 : 1);
+                let moveDir = dist[0] * absDir[1] < dist[1] * absDir[0] ? 0 : 1
+                move(moveDir);
                 
                 if (final)
                 {
@@ -328,11 +328,11 @@ export class Board
                 neighbor(point.add(new Point(1, 0)), 1),
                 neighbor(point.add(new Point(1, 1)), sqrt2),
                 neighbor(point.add(new Point(0, 1)), 1),
-                neighbor(point.add(new Point(1, 1)), sqrt2),
-                neighbor(point.add(new Point(1, 0)), 1),
-                neighbor(point.add(new Point(1, 1)), sqrt2),
-                neighbor(point.add(new Point(0, 1)), 1),
-                neighbor(point.add(new Point(1, 1)), sqrt2)
+                neighbor(point.add(new Point(-1, 1)), sqrt2),
+                neighbor(point.add(new Point(-1, 0)), 1),
+                neighbor(point.add(new Point(-1, -1)), sqrt2),
+                neighbor(point.add(new Point(0, -1)), 1),
+                neighbor(point.add(new Point(1, -1)), sqrt2)
             ];
         });
     }

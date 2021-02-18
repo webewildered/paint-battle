@@ -707,11 +707,11 @@ export class Client extends EventEmitter
         let testPoint = point;
         if (absX >= absY)
         {
-            testPoint.x = point.x + Math.sign(x);
+            testPoint = new Point(testPoint.x + Math.sign(x), testPoint.y);
         }
         if (absY >= absX)
         {
-            testPoint.y = point.y + Math.sign(y);
+            testPoint = new Point(testPoint.x, point.y + Math.sign(y));
         }
 
         // Return the point if it is valid, otherwise return null
