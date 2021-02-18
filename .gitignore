@@ -4,3 +4,4 @@ azure.err
 *.publishsettings
 debug.log
 out/*
+public/bundle.js
