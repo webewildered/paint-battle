@@ -470,7 +470,7 @@ export class Client extends EventEmitter
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
-                    if (playPoint)
+                    if (!playPoint)
                     {
                         return;
                     }

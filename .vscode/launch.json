@@ -21,17 +21,7 @@
             "url": "http://localhost:3000",
             "webRoot": "${workspaceFolder}",
             "preLaunchTask": "webpack",
-            //"preLaunchTask": "browserify",
             //"runtimeArgs": ["--disable-3d-apis"]
         },
-        {
-            "type": "chrome",
-            "request": "launch",
-            "name": "TestPage",
-            "url": "http://localhost:3000/test.html",
-            "webRoot": "${workspaceFolder}",
-            "preLaunchTask": "browserifyTest",
-            //"runtimeArgs": ["--disable-3d-apis"]
-        }
     ]
 }

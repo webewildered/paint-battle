@@ -14,22 +14,11 @@
                 "kind": "build",
                 "isDefault": true
             },
-            "detail": "tsc -watch -p ./"
         },
         {
             "label": "webpack",
             "type": "shell",
             "command": "npx webpack",
         },
-        {
-            "label": "browserify",
-            "type": "shell",
-            "command": "browserify -p tsify --debug src/lobby.ts -o public/bundle.js",
-        },
-        {
-            "label": "browserifyTest",
-            "type": "shell",
-            "command": "browserify -p tsify --debug src/test.ts -o public/testbundle.js",
-        }
     ]
 }
