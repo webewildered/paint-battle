@@ -19,7 +19,7 @@ const maxPlayers = 2;
 let cardPalette = [
     [0x22, 0x22, 0x22, 0xff],
     [0xff, 0xff, 0xff, 0xff]
-]
+];
 
 const cardWidth = 100;
 const cardHeight = 150;
@@ -91,9 +91,9 @@ function renderCard(card: Card, on: number, off: number, minSize = 0)
     w = Math.max(w, minSize);
     h = Math.max(h, minSize);
     
-    if (w % 2 == 0 || h % 2 == 0)
+    if (w % 2 === 0 || h % 2 === 0)
     {
-        throw 'unexpected even dimension'; // unhandled ambiguity in choosing the middle pixel
+        throw new Error('unexpected even dimension'); // unhandled ambiguity in choosing the middle pixel
     }
     
     let board = new Board(w, h);
@@ -130,7 +130,7 @@ export class Client extends EventEmitter
     socket: Socket;
     localPlayerId: number;
     palette: number[][];
-    previewPalette: number[][]
+    previewPalette: number[][];
     players: CPlayer[];
     
     buffer: Uint8ClampedArray;
@@ -184,7 +184,7 @@ export class Client extends EventEmitter
             this.textureReport();
             if (this.players[playerId].local)
             {
-                this.status.text = 'Your turn - play a card!'
+                this.status.text = 'Your turn - play a card!';
                 this.players[playerId].setEnabled(true);
             }
             else
@@ -295,7 +295,7 @@ export class Client extends EventEmitter
         for (let i = 0; i < numPlayers; i++)
         {
             let name = playerNames[i];
-            let local = (this.isLocalGame() || i == localPlayerId);
+            let local = (this.isLocalGame() || i === localPlayerId);
             this.players[i] = new CPlayer(i, name, local);
         }
 
@@ -306,7 +306,7 @@ export class Client extends EventEmitter
         if (!this.isLocalGame())
         {
             // Card revealed
-            let onReveal = (reveal: Reveal) => { game.reveal(reveal); }
+            let onReveal = (reveal: Reveal) => { game.reveal(reveal); };
             socket.on('reveal', onReveal);
 
             // Another player played a card
@@ -365,7 +365,7 @@ export class Client extends EventEmitter
     }
     
     // Returns true if this game is run entirely in the client, with no server connection
-    isLocalGame() { return (this.localPlayerId == -1); }
+    isLocalGame() { return (this.localPlayerId === -1); }
 
     layout()
     {
@@ -407,7 +407,7 @@ export class Client extends EventEmitter
             this.updateOverlayBoard();
         }
 
-        if (this.cursor != null)
+        if (this.cursor)
         {
             this.updateCursor();
         }
@@ -427,7 +427,7 @@ export class Client extends EventEmitter
         {
             this.cancel.visible = false;
             this.removeAllListeners('cancel');
-        }
+        };
 
         let playAction = (action: Action) => this.animateStep(this.playAction(action));
 
@@ -449,7 +449,7 @@ export class Client extends EventEmitter
                         playAction(new Action(cardId, [playPoint]));
                         this.clearCursor();
                     }
-                }
+                };
                 break;
                 
             case CardType.Poly:
@@ -462,7 +462,7 @@ export class Client extends EventEmitter
                         playAction(new Action(cardId, [playPoint]));
                         this.clearCursor();
                     }
-                }
+                };
                 break;
 
             // Line - two clicks with line visualization after the first click
@@ -470,7 +470,7 @@ export class Client extends EventEmitter
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
-                    if (playPoint == null)
+                    if (playPoint)
                     {
                         return;
                     }
@@ -485,7 +485,7 @@ export class Client extends EventEmitter
                         this.overlayBoard.clear(this.previewPalette.length - 1);
                         this.overlayBoard.drawLine(playPoint!, point2, (card as LineCard).pixels, 0);
                         this.updateOverlayBoard();
-                    }
+                    };
                     app.ticker.add(update);
 
                     // Listen for the second click
@@ -498,7 +498,7 @@ export class Client extends EventEmitter
                         this.endPreview();
                     };
                     this.on('boardClick', listener);
-                }
+                };
                 break;
             
             // Paint - two clicks with visualization after the first click
@@ -524,7 +524,7 @@ export class Client extends EventEmitter
                         {
                             last = point;
                         }
-                        else if (point.x == last.x && point.y == last.y)
+                        else if (point.x === last.x && point.y === last.y)
                         {
                             return;
                         }
@@ -543,7 +543,7 @@ export class Client extends EventEmitter
                         {
                             this.status.text = 'Painting (' + paintPixels + 'px left)';
                         }
-                    }
+                    };
                     this.on('mouseMove', moveListener);
 
                     // Stop painting on click
@@ -559,12 +559,12 @@ export class Client extends EventEmitter
                         playAction(new Action(cardId, paintPoints));
                         
                         this.endPreview();
-                    }
+                    };
                     this.on('boardClick', listener);
 
                     // Fake a mouse move event to draw in the start position immediately
                     moveListener(playPoint);
-                }
+                };
                 break;
 
             // Grow - single click with visualization of the range that will be extended
@@ -579,7 +579,7 @@ export class Client extends EventEmitter
                     floodBoard.drawFlood(game.board, point, game.currentPlayer);
                     this.overlayBoard.outline(game.currentPlayer, 0, this.previewPalette.length - 1, floodBoard);
                     this.updateOverlayBoard();
-                }
+                };
                 app.ticker.add(update);
                 
                 listener = (point: Point) =>
@@ -593,7 +593,7 @@ export class Client extends EventEmitter
                         playAction(new Action(cardId, [playPoint]));
                         this.endPreview();
                     }
-                }
+                };
                 break;
                 
             // Dynamite: animated after click
@@ -608,7 +608,7 @@ export class Client extends EventEmitter
                         playAction(new Action(cardId, [playPoint]));
                         this.clearCursor();
                     }
-                }
+                };
                 break;
 
             default: throw new Error('Unknown card type');
@@ -618,7 +618,7 @@ export class Client extends EventEmitter
         this.on('cancel', () =>
         {
             onCancel();
-            this.status.text = 'Your turn - play a card!'
+            this.status.text = 'Your turn - play a card!';
             this.players[game.currentPlayer].setEnabled(true);
             this.cancel.visible = false;
         });
@@ -696,7 +696,7 @@ export class Client extends EventEmitter
         
         // If no neighbors are valid then we can't play
         // If there are valid neighbors evenly distributed, then there's no single obvious choice where to play
-        if (!ok || (x == 0 && y == 0))
+        if (!ok || (x === 0 && y === 0))
         {
             return undefined;
         }
@@ -714,7 +714,7 @@ export class Client extends EventEmitter
             testPoint = new Point(testPoint.x, point.y + Math.sign(y));
         }
 
-        // Return the point if it is valid, otherwise return null
+        // Return the point if it is valid, otherwise return undefined
         return game.startOk(testPoint) ? testPoint : undefined;
     }
 
@@ -758,14 +758,14 @@ export class Client extends EventEmitter
         this.previewCursor.visible = onBoard;
 
         let playPosition = this.getPlayPosition(point);
-        if (playPosition == null)
+        if (playPosition)
         {
-            playPosition = point;
-            this.cursor.alpha = 0.5;
+            this.cursor.alpha = 1;
         }
         else
         {
-            this.cursor.alpha = 1;
+            playPosition = point;
+            this.cursor.alpha = 0.5;
         }
 
         this.previewCursor.x = scale * (playPosition.x - Math.floor(this.previewCursor.width / (2 * scale)));
@@ -776,15 +776,15 @@ export class Client extends EventEmitter
 
     clearCursor()
     {
-        if (this.cursor != null)
+        if (this.cursor)
         {
             this.boardSprite.removeChild(this.cursor);
             this.cursor.destroy(true);
-            this.cursor = null;
+            this.cursor = undefined;
             
             this.boardSprite.removeChild(this.previewCursor);
             this.previewCursor.destroy(true);
-            this.previewCursor = null;
+            this.previewCursor = undefined;
 
             this.setCursorStyle("");
 
@@ -867,7 +867,7 @@ class CPlayer
     {
         let statusStr = this.count + 'px';
 
-        if (this.delta != 0)
+        if (this.delta !== 0)
         {
             let sign = (this.delta >= 0) ? '+' : '';
             statusStr = statusStr + ' (' + sign + this.delta + ')';
@@ -911,7 +911,7 @@ class CPlayer
     play(cardId: number)
     {
         // Find the card and remove it
-        let cardIndex = this.cards.findIndex(card => card.cardId == cardId);
+        let cardIndex = this.cards.findIndex(card => card.cardId === cardId);
         let card = this.cards[cardIndex];
         this.cards.splice(cardIndex, 1);
         this.container.removeChild(card.graphics);
@@ -956,7 +956,7 @@ class CCard extends EventEmitter
         {
             if (this.enabled)
             {
-                this.emit('click', cardId)
+                this.emit('click', cardId);
             }
         });
         
@@ -975,7 +975,7 @@ class CCard extends EventEmitter
         // Handle reveal
         game.on('reveal', (cardId: number) =>
         {
-            if (cardId == this.cardId)
+            if (cardId === this.cardId)
             {
                 this.updateGraphics();
             }
@@ -994,7 +994,7 @@ class CCard extends EventEmitter
 
     // Hepler getters
     getCard() { return game.getCard(this.cardId); }
-    isHidden() { return this.getCard() == null; }
+    isHidden() { return !this.getCard(); }
 
     // Set the position immediately
     setPosition(x: number, y: number)
@@ -1018,7 +1018,7 @@ class CCard extends EventEmitter
         let dx = this.graphics.x - this.targetX;
         let dy = this.graphics.y - this.targetY;
         let dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist == 0)
+        if (dist === 0)
         {
             return;
         }
@@ -1063,12 +1063,12 @@ class CCard extends EventEmitter
         // Add the card background
         this.graphics.clear();
         this.graphics.lineStyle(2, this.graphics.interactive ? (this.mouseOver ? 0xee0000 : 0x0000ee) : 0x333333, 1);
-        this.graphics.beginFill(card == null ? 0xaaaaaa : 0xffffff);
+        this.graphics.beginFill(card ? 0xffffff : 0xaaaaaa);
         this.graphics.drawRoundedRect(0, 0, cardWidth, cardHeight, 10);
         this.graphics.endFill();
 
         // Add the card content
-        if (card == null)
+        if (!card)
         {
             // Unrevealed card
             let text = new PIXI.Text('?', {fontFamily : 'Arial', fontSize: 24, fill : 0x333333, align : 'left'});
@@ -1108,7 +1108,7 @@ class CCard extends EventEmitter
             text.y = Math.floor(10);
             this.graphics.addChild(text);
 
-            let pxString = ((pixels == 0) ? '*' : pixels) + 'px';
+            let pxString = ((pixels === 0) ? '*' : pixels) + 'px';
             let pxText = new PIXI.Text(pxString, {fontFamily : 'Arial', fontSize: 18, fill : 0x222222, align : 'left'});
             pxText.x = Math.floor((cardWidth - pxText.width) / 2);
             pxText.y = Math.floor(cardHeight - pxText.height - 10);

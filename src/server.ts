@@ -36,7 +36,7 @@ module.exports = function(http: Server)
         {
             for (let i = 0; i < this.players.length; i++)
             {
-                if (this.players[i].socket == socket)
+                if (this.players[i].socket === socket)
                 {
                     return i;
                 }
@@ -69,7 +69,7 @@ module.exports = function(http: Server)
 
             // Find or create the room
             let joinRoom: Room|undefined;
-            if (key.length == 0)
+            if (key.length === 0)
             {
                 // Generate a random key
                 const tries = 5;
@@ -93,7 +93,7 @@ module.exports = function(http: Server)
                     key = '';
                 }
             }
-            else if (key.length == 6)
+            else if (key.length === 6)
             {
                 key = key.toLowerCase();
                 joinRoom = rooms.get(key);
@@ -158,7 +158,7 @@ module.exports = function(http: Server)
 
                 // Check if the sender is host
                 let playerId = room.getPlayerId(socket);
-                if (playerId != 0)
+                if (playerId !== 0)
                 {
                     console.log('received start message from a non-host player');
                     return;
@@ -247,7 +247,7 @@ module.exports = function(http: Server)
                 }
                 console.log(key + ':' + room.getPlayerId(socket) + ' ready');
                 room.ready++;
-                if (room.ready == room.players.length)
+                if (room.ready === room.players.length)
                 {
                     room.game.begin();
                     room.broadcast((socket: Socket) => socket.emit('ready'));
@@ -255,4 +255,4 @@ module.exports = function(http: Server)
             });
         });
     });
-}
+};

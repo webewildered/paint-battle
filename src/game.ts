@@ -176,7 +176,7 @@ export class Game extends EventEmitter
 
         if (!(numPlayers >= 1 && numPlayers <= 6))
         {
-            throw 'Unsupported player count ' + numPlayers;
+            throw new Error('Unsupported player count ' + numPlayers);
         }
 
         // Make a deck of cards
@@ -185,7 +185,7 @@ export class Game extends EventEmitter
         const countMed = [0, 5, 5, 5, 6, 7, 8][numPlayers];
         const countHigh = [0, 7, 7, 7, 8, 8, 9][numPlayers];
 
-        let addCard = (count: number, card: Card) => { this.deck = this.deck.concat(Array<Card>(count).fill(card)); }
+        let addCard = (count: number, card: Card) => { this.deck = this.deck.concat(Array<Card>(count).fill(card)); };
         addCard(countLow, new BoxCard(45, 21));
         addCard(countLow, new BoxCard(21, 45));
         addCard(countMed, new LineCard(140));
@@ -242,7 +242,7 @@ export class Game extends EventEmitter
 
     getCard(cardId: number): Card|undefined
     {
-        return this.deck[this.shuffle[cardId]]
+        return this.deck[this.shuffle[cardId]];
     }
 
     //
@@ -287,7 +287,7 @@ export class Game extends EventEmitter
         if (this.rules.blocking)
         {
             let b = this.board.get(point);
-            return (b == c || b == this.players.length);
+            return (b === c || b === this.players.length);
         }
         return true;
     }
@@ -321,7 +321,7 @@ export class Game extends EventEmitter
         if (!Number.isFinite(action.cardId) || !Array.isArray(action.points) || action.points.length > 1000 || 
             !Array.isArray(action.reveals) || action.reveals.length > 1000)
         {
-            throw 'Game.play() failed: action is invalid';
+            throw new Error('Game.play() failed: action is invalid');
         }
 
         // Validate and rebuild points, in case they came from a remote connection
@@ -329,7 +329,7 @@ export class Game extends EventEmitter
         {
             if (!this.coordsOk(action.points[i]))
             {
-                throw 'Game.play() failed: points are invalid';
+                throw new Error('Game.play() failed: points are invalid');
             }
             action.points[i] = new Point(action.points[i].x, action.points[i].y);
         }
@@ -337,7 +337,7 @@ export class Game extends EventEmitter
         // Make sure the card belongs to the current player
         if (!this.players[this.currentPlayer].hand.includes(action.cardId))
         {
-            throw 'Game.play() failed: player does not have the card';
+            throw new Error('Game.play() failed: player does not have the card');
         }
 
         // Do the reveals
@@ -350,14 +350,14 @@ export class Game extends EventEmitter
         let card = this.getCard(action.cardId);
         if (!card)
         {
-            throw 'Game.play() failed: card is invalid';
+            throw new Error('Game.play() failed: card is invalid');
         }
 
         // Returns a stepping function that flood fills the board from x, y with color c, restricted to
         // pixels that are set to 1 in the mask and that are set to either c or this.players.length on the board
         let floodMaskStep = (mask: Board, start: Point, c: number) => mask.floodfStep(action.points[0], (point: Point) =>
         {
-            if (mask.get(point) == 1 && this.isOpen(point, c))
+            if (mask.get(point) === 1 && this.isOpen(point, c))
             {
                 this.board.set(point, c);
                 return true;
@@ -373,12 +373,12 @@ export class Game extends EventEmitter
             case CardType.Circle:
             case CardType.Eraser:
             {
-                if (action.points.length != 1 || !this.startOk(action.points[0]))
+                if (action.points.length !== 1 || !this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed: points are invalid';
+                    throw new Error('Game.play() failed: points are invalid');
                 }
                 
-                let color = (card.type == CardType.Circle) ? c : this.players.length;
+                let color = (card.type === CardType.Circle) ? c : this.players.length;
                 let mask = this.board.buffer(0);
                 mask.drawCircle(action.points[0], card.radius, 1);
                 step = floodMaskStep(mask, action.points[0], color);
@@ -386,9 +386,9 @@ export class Game extends EventEmitter
             }
             case CardType.Box:
             {
-                if (action.points.length != 1 || !this.startOk(action.points[0]))
+                if (action.points.length !== 1 || !this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed: points are invalid';
+                    throw new Error('Game.play() failed: points are invalid');
                 }
                 let mask = this.board.buffer(0);
                 let boxCard = card as BoxCard;
@@ -398,9 +398,9 @@ export class Game extends EventEmitter
             }
             case CardType.Poly:
             {
-                if (action.points.length != 1 || !this.startOk(action.points[0]))
+                if (action.points.length !== 1 || !this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed: points are invalid';
+                    throw new Error('Game.play() failed: points are invalid');
                 }
                 let mask = this.board.buffer(0);
                 let polyCard = card as PolyCard;
@@ -410,9 +410,9 @@ export class Game extends EventEmitter
             }
             case CardType.Line:
             {
-                if (action.points.length != 2 || !this.startOk(action.points[0]))
+                if (action.points.length !== 2 || !this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed: points are invalid';
+                    throw new Error('Game.play() failed: points are invalid');
                 }
 
                 const clamp = false;
@@ -430,15 +430,15 @@ export class Game extends EventEmitter
                 step = () =>
                 {
                     return lineStep(10);
-                }
+                };
                 break;
             }
             case CardType.Paint:
             {
                 let paintCard = card as PaintCard;
-                if (action.points.length == 0 || action.points.length > paintCard.pixels || !this.startOk(action.points[0]))
+                if (action.points.length === 0 || action.points.length > paintCard.pixels || !this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed: points are invalid';
+                    throw new Error('Game.play() failed: points are invalid');
                 }
                 
                 let pixels = paintCard.pixels; // Number of pixels left
@@ -459,7 +459,7 @@ export class Game extends EventEmitter
                             }
                             if (pixels <= 0)
                             {
-                                throw 'Game.play() failed'; // too many points
+                                throw new Error('Game.play() failed'); // too many points
                             }
                             let nextPoint = action.points[i++];
                             paintStep = paintBoard.paintfStep(paintPoint, nextPoint, paintCard.radius, pixels, c, (point: Point) => this.isOpen(point, c));
@@ -478,34 +478,34 @@ export class Game extends EventEmitter
 
                     this.board.add(paintBoard, c);
                     return (!!paintStep || i < action.points.length);
-                }
+                };
                 break;
             }
             case CardType.Grow:
             {
                 if (!this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed';
+                    throw new Error('Game.play() failed');
                 }
                 
                 let growStep = this.board.growfStep(action.points[0], (card as GrowCard).radius, c, (point: Point) => this.isOpen(point, c));
                 step = () =>
                 {
                     return growStep(1);
-                }
+                };
                 break;
             }
             case CardType.Dynamite:
             {
                 if (!this.startOk(action.points[0]))
                 {
-                    throw 'Game.play() failed';
+                    throw new Error('Game.play() failed');
                 }
                 step = this.board.dynamiteStep(action.points[0], (card as DynamiteCard).radius, this.players.length);
                 break;
             }
             default:
-                throw 'Game.play() failed: card type is invalid'; // should never happen even if an invalid message is received
+                throw new Error('Game.play() failed: card type is invalid'); // should never happen even if an invalid message is received
         }
 
         // Reveal the card played
@@ -528,14 +528,14 @@ export class Game extends EventEmitter
             this.emit('updateBoard');
             this.nextTurn();
             return false;
-        }
+        };
     }
 
     // Handle disconnects
     removePlayer(playerId: number)
     {
         this.players[playerId].disconnected = true;
-        if (++this.numDisconnected == this.players.length - 1)
+        if (++this.numDisconnected === this.players.length - 1)
         {
             // TODO game is over
         }
@@ -579,6 +579,6 @@ export class Game extends EventEmitter
 
     startOk(point: Point)
     {
-        return (this.board.get(point) == this.currentPlayer || this.board.count(this.players.length + 1)[this.currentPlayer] == 0);
+        return (this.board.get(point) === this.currentPlayer || this.board.count(this.players.length + 1)[this.currentPlayer] === 0);
     }
 }

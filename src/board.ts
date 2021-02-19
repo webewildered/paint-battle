@@ -33,7 +33,7 @@ export class Point
 
     equal(point: Point): boolean
     {
-        return this.x == point.x && this.y == point.y;
+        return this.x === point.x && this.y === point.y;
     }
 
     clone(): Point
@@ -154,7 +154,7 @@ export class Board
             while (numSteps > 0)
             {
                 // Check if the end of the line was reached
-                let final = (pos[0] == stop[0] && pos[1] == stop[1]);
+                let final = (pos[0] === stop[0] && pos[1] === stop[1]);
                 if (final)
                 {
                     lastMove = nMove; // Always draw the end pixel
@@ -166,7 +166,7 @@ export class Board
                     let j = 1 - i;
                     
                     // Check for diagonal step
-                    if (single && lastMove != i && lastMove != nMove)
+                    if (single && lastMove !== i && lastMove !== nMove)
                     {
                         // Skip the last pixel
                         lastMove = nMove;
@@ -190,7 +190,7 @@ export class Board
                     // Check for collision with left/right edge
                     if (pos[i] < 0 || pos[i] >= size[i])
                     {
-                        if (clamp && absDir[j] != 0)
+                        if (clamp && absDir[j] !== 0)
                         {
                             pos[i] = Math.min(Math.max(pos[i], 0), size[i] - 1);
                             stop[i] = pos[i];
@@ -201,10 +201,10 @@ export class Board
                             final = true;
                         }
                     }
-                }
+                };
 
                 // Check whether the line crosses x or y boundary next and move in that direction
-                let moveDir = dist[0] * absDir[1] < dist[1] * absDir[0] ? 0 : 1
+                let moveDir = dist[0] * absDir[1] < dist[1] * absDir[0] ? 0 : 1;
                 move(moveDir);
                 
                 if (final)
@@ -214,7 +214,7 @@ export class Board
             }
 
             return true;
-        }
+        };
     }
     
     // Returns a function that will execute dijkstraf() in steps, increasing the maximum cost each time it is called by a
@@ -240,7 +240,7 @@ export class Board
                     return true;
                 }
                 let item = queue.dequeue() as Node;
-                if (visited.get(item) == 0)
+                if (visited.get(item) === 0)
                 {
                     visited.set(item, 1);
                     let neighbors = f(item);
@@ -256,7 +256,7 @@ export class Board
             }
             
             return false;
-        }
+        };
     }
 
     // Dijstra's algorithm.  Visits pixels starting from (x, y) in order by cost and calls f() at each one.
@@ -296,7 +296,7 @@ export class Board
     growfStep(start: Point, r: number, c: number, f: (point: Point) => boolean)
     {
         // Grow must start on a pixel of color c
-        if (this.get(start) != c)
+        if (this.get(start) !== c)
         {
             return (steps: number) => false;
         }
@@ -321,7 +321,7 @@ export class Board
             this.set(point, c);
 
             // Move through the flood region for free
-            let neighbor = (point: Point, cost: number) => new Node(point, floodBoard.get(point) == c ? 0 : cost);
+            let neighbor = (point: Point, cost: number) => new Node(point, floodBoard.get(point) === c ? 0 : cost);
             
             // Visit neighbors in cardinal + diagonal directions
             return [
@@ -409,7 +409,7 @@ export class Board
         return this.linefStep(start, end, clamp, single, (point: Point) => 
         {
             this.set(point, c);
-            if (--p == 0)
+            if (--p === 0)
             {
                 return false;
             }
@@ -446,10 +446,10 @@ export class Board
             mask.floodf(point, (point: Point) =>
             {
                 // Check if the pixel is within the circle and not blocked by f
-                if (mask.get(point) == 1 && f(point))
+                if (mask.get(point) === 1 && f(point))
                 {
                     // Only count pixels that are not already set
-                    if (this.get(point) != c)
+                    if (this.get(point) !== c)
                     {
                         this.set(point, c);
                         p--;
@@ -457,7 +457,7 @@ export class Board
                     return true;
                 }
                 return false;
-            })
+            });
 
             // Check if the pixel budget is empty
             if (p <= 0)
@@ -476,7 +476,7 @@ export class Board
                 return undefined;
             }
             return new PaintResult(current, p);
-        }
+        };
     }
     
     // Draw a circular brush of radius r and color c along the line from (x, y) to (ex, ey), until one of:
@@ -510,7 +510,7 @@ export class Board
     {
         src.floodf(start, (point: Point) =>
         {
-            if (src.get(point) == c)
+            if (src.get(point) === c)
             {
                 this.set(point, c);
                 return true;
@@ -528,11 +528,11 @@ export class Board
             for (let v = 0; v < this.height; v++)
             {
                 let point = new Point(u, v);
-                let c = (src.get(point) == mask && (
-                    src.get(new Point(u - 1, v)) != mask || 
-                    src.get(new Point(u + 1, v)) != mask || 
-                    src.get(new Point(u, v - 1)) != mask || 
-                    src.get(new Point(u, v + 1)) != mask))
+                let c = (src.get(point) === mask && (
+                    src.get(new Point(u - 1, v)) !== mask || 
+                    src.get(new Point(u + 1, v)) !== mask || 
+                    src.get(new Point(u, v - 1)) !== mask || 
+                    src.get(new Point(u, v + 1)) !== mask))
                     ? on : off;
                 this.set(point, c);
             }
@@ -588,7 +588,7 @@ export class Board
                     this.set(point, queue.shift());
                     if (distSq > rSq)
                     {
-                        if (c == e)
+                        if (c === e)
                         {
                             pressure += 0.33;
                         }
@@ -611,7 +611,7 @@ export class Board
                 })(Infinity);
             }
             return true;
-        }
+        };
     }
 
     //
@@ -656,7 +656,7 @@ export class Board
         this.matchDimensions(src);
         this.allf((i) =>
         { 
-            if (src.data[i] == c)
+            if (src.data[i] === c)
             {
                 this.data[i] = c;
             }
@@ -669,9 +669,9 @@ export class Board
 
     matchDimensions(board: Board)
     {
-        if (this.width != board.width && this.height != board.height)
+        if (this.width !== board.width && this.height !== board.height)
         {
-            throw 'The input board has different dimensions than this one';
+            throw new Error('The input board has different dimensions than this one');
         }
     }
 
@@ -686,13 +686,13 @@ export class Board
         this.allf((i) =>
         { 
             let valueCount = a[this.data[i]];
-            if (valueCount == null)
+            if (valueCount)
             {
-                valueCount = 1;
+                valueCount++;
             }
             else
             {
-                valueCount++;
+                valueCount = 1;
             }
             a[this.data[i]] = valueCount;
         });
@@ -715,11 +715,11 @@ export class Board
     {
         if (!buffer)
         {
-            buffer = new Uint8ClampedArray(this.bufferSize(scale))
+            buffer = new Uint8ClampedArray(this.bufferSize(scale));
         }
-        else if (buffer.length != this.bufferSize(scale))
+        else if (buffer.length !== this.bufferSize(scale))
         {
-            throw 'Incorrect buffer size';
+            throw new Error('Incorrect buffer size');
         }
 
         const pixel = 4;

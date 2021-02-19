@@ -1,6 +1,6 @@
 // This requires the socket.io.js client in the global scope
 import { Client } from './client';
-import { Rules } from './game'
+import { Rules } from './game';
 import { Socket } from 'socket.io-client';
 import * as io from 'socket.io-client';
 
@@ -34,7 +34,7 @@ $(function()
     function addPlayer(name: string)
     {
         let li = $('<li>').text(name);
-        if (lobbyPlayers.length == 0)
+        if (lobbyPlayers.length === 0)
         {
             li.append(' (host)');
         }
@@ -70,7 +70,7 @@ $(function()
     let joinForm = $('#joinForm');
     let localForm = $('#localForm');
     key = document.location.search.slice(1);
-    if (key.length == 6)
+    if (key.length === 6)
     {
         host = false;
         $('#joinButton').text("Join game");
@@ -121,7 +121,7 @@ $(function()
                 addPlayer(players[i]);
             }
             addPlayer(playerName);
-            if (players.length == 0)
+            if (players.length === 0)
             {
                 becomeHost();
             }
@@ -138,14 +138,14 @@ $(function()
         {
             lobbyPlayers[id].li.remove();
             lobbyPlayers.splice(id, 1);
-            if (id == 0)
+            if (id === 0)
             {
                 lobbyPlayers[0].li.append(' (host)');
             }
             if (localPlayerId > id)
             {
                 localPlayerId--;
-                if (localPlayerId == 0)
+                if (localPlayerId === 0)
                 {
                     becomeHost();
                 }
