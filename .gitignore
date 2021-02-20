@@ -5,3 +5,4 @@ azure.err
 debug.log
 out/*
 public/bundle.js
+public/testbundle.js
