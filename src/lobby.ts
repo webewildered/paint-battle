@@ -26,7 +26,7 @@ $(function()
     let localPlayerId = -1;
     let lobbyPlayers: LobbyPlayer[] = [];
     let socket = io() as Socket;
-
+    
     //
     // Helper functions
     //
@@ -42,16 +42,27 @@ $(function()
         lobbyPlayers.push(new LobbyPlayer(name, li));
     }
 
+    function getRules(): Rules
+    {
+        let scale = $('#scaleRule').val() as number;
+        let size = Math.round(600 / scale);
+        size -= (1 - size % 2); // make odd
+        return {
+            blocking: $('#blockingRule').is(':checked'),
+            size: size
+        };
+    }
+
     function becomeHost()
     {
-        $('#startForm').show();
-        $('#startForm').submit(function()
+        $('#rulesForm').show();
+        $('#startForm').show().on('submit', function()
         {
             if (!socket)
             {
                 throw new Error('becomeHost() failed');
             }
-            socket.emit('start', { blocking: $('#blockingRule').is(':checked') });
+            socket.emit('start', getRules());
             return false; // Don't reload the page
         });
     }
@@ -67,8 +78,6 @@ $(function()
     }
     
     // Join an existing lobby or create a new one
-    let joinForm = $('#joinForm');
-    let localForm = $('#localForm');
     key = document.location.search.slice(1);
     if (key.length === 6)
     {
@@ -78,32 +87,31 @@ $(function()
     else
     {
         // Testing option - quick start a local game
-        localForm.show();
-        localForm.submit(function()
+        $('#rulesForm').show();
+        $('#localForm').show().on('submit', () =>
         {
             socket.close();
-            joinForm.hide();
-            localForm.hide();
+            $('#joinForm').hide();
+            $('#localForm').hide();
+            $('#rulesForm').hide();
             let numPlayers = $('#localPlayersInput').val() as number;
-            let rules: Rules = { blocking: $('#blockingRuleLocal').is(':checked') };
             localPlayerId = -1;
             lobbyPlayers = [];
             for (let i = 0; i < numPlayers; i++)
             {
                 addPlayer('Player ' + (i + 1));
             }
-            startGame(rules);
+            startGame(getRules());
             return false;
         });
         host = true;
     }
     
     // Show the lobby once the player joins
-    joinForm.show();
-    joinForm.submit(function()
+    $('#joinForm').show().on('submit', () =>
     {
-        joinForm.hide();
-        localForm.hide();
+        $('#joinForm').hide();
+        $('#localForm').hide();
         
         let playerName = $('#nameInput').val() as string;
 

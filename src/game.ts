@@ -114,6 +114,7 @@ export class DynamiteCard extends Card
 export class Rules
 {
     blocking: boolean = false;
+    size: number = 299;
 }
 
 export class Reveal
@@ -150,7 +151,6 @@ export class Game extends EventEmitter
 {
     rules: Rules;
     board: Board;
-    size: number;
     deck: Card[];
     shuffle: number[];
     pile: number[];
@@ -166,9 +166,6 @@ export class Game extends EventEmitter
         this.setMaxListeners(100);
 
         this.rules = rules;
-
-        // Constants
-        this.size = 299; // Gameboard dimension
 
         // Initialize the game board
         this.board = new Board(this.size, this.size);
@@ -239,6 +236,8 @@ export class Game extends EventEmitter
         // Queue of pending actions
         this.queue = [];
     }
+
+    get size(): number { return this.rules.size; }
 
     getCard(cardId: number): Card|undefined
     {

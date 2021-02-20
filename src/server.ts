@@ -153,7 +153,8 @@ module.exports = function(http: Server)
             {
                 // Validate rules
                 let rules: Rules = {
-                    blocking: (rulesIn && rulesIn.blocking)
+                    blocking: (rulesIn && rulesIn.blocking),
+                    size: (rulesIn && rulesIn.size > 0 && rulesIn.size < 600) ? rulesIn.size: 299
                 };
 
                 // Check if the sender is host

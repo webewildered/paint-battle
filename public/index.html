@@ -13,9 +13,8 @@
 
 <form id="localForm" style="margin: 10px; display:none">
     <br />
-    <input type="number" value="2" min="1" max="6" id="localPlayersInput" style="font-size:18;" />
-    <input type="checkbox" id="blockingRuleLocal">
-    <label for="blockingRuleLocal"> Enable blocking</label><br>
+    <input type="number" value="2" min="1" max="6" id="localPlayersInput" style="font-size:18;width:30pt" />
+    <label for="localPlayersInput"> players</label>
     <button id="localButton" style="font-size:18;">Local game</button>
 </form>
 
@@ -25,11 +24,18 @@
     <list id="playerList"></list>
     <br />
     <form id="startForm" style="display:none">
-        <input type="checkbox" id="blockingRule">
-        <label for="blockingRule"> Enable blocking</label><br>
         <button id="startButton" style="font-size:18">Start game</button>
     </form>
 </div>
+
+<form id="rulesForm" style="margin: 10px; display:none; font-size:18">
+    <br />
+    Rules:<br />
+    <input type="checkbox" id="blockingRule">
+    <label for="blockingRule"> Enable blocking</label><br>
+    <input type="number" value="2" min="2" max="4" id="scaleRule" style="font-size:18;width:30pt" />
+    <label for="scaleRule"> Scale</label><br>
+</form>
 
 <div id="error" style="margin: 10px; display:none">
     Sorry, that game was not found. <a id="startUrl">Start a new one</a>

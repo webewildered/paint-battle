@@ -4,7 +4,6 @@ import { Point, Board } from './board';
 const EventEmitter = require('events');
 
 // Constants
-const scale = 2; // Screen pixels per board pixel
 const colors = [ // Player colors
     0x3d1defff, // player 0 rgba
     0xed0730ff, // player 1 rgba
@@ -14,7 +13,6 @@ const colors = [ // Player colors
     0xff7c3aff,
     0xffffffff  // blank
 ];
-const maxPlayers = 2;
 
 let cardPalette = [
     [0x22, 0x22, 0x22, 0xff],
@@ -132,6 +130,8 @@ export class Client extends EventEmitter
     palette: number[][];
     previewPalette: number[][];
     players: CPlayer[];
+
+    scale: number;
     
     buffer: Uint8ClampedArray;
     overlayBuffer: Uint8ClampedArray;
@@ -154,6 +154,8 @@ export class Client extends EventEmitter
         
         this.socket = socket;
         this.localPlayerId = localPlayerId;
+
+        this.scale = Math.floor(600 / rules.size);
 
         //
         // Create the game and listen for its events
@@ -225,8 +227,7 @@ export class Client extends EventEmitter
         app.stage.addChild(this.boardContainer);
 
         // Game board display
-        let boardSize = game.size * 2;
-        this.buffer = new Uint8ClampedArray(boardSize * boardSize * 4);
+        this.buffer = new Uint8ClampedArray(game.board.bufferSize(this.scale));
         this.boardGraphics = new PIXI.Graphics();
         this.boardContainer.addChild(this.boardGraphics);
         this.boardSprite = new PIXI.Sprite();
@@ -234,7 +235,7 @@ export class Client extends EventEmitter
         this.boardContainer.addChild(this.boardSprite);
 
         // Board overlay for preview of player actions
-        this.overlayBuffer = new Uint8ClampedArray(boardSize * boardSize * 4);
+        this.overlayBuffer = new Uint8ClampedArray(game.board.bufferSize(this.scale));
         this.overlayBoard = new Board(game.size, game.size);
         this.overlaySprite = new PIXI.Sprite();
         this.overlaySprite.visible = false;
@@ -361,7 +362,7 @@ export class Client extends EventEmitter
     getBoardPosition(interactionData = app.renderer.plugins.interaction.mouse): Point
     {
         let point = interactionData.getLocalPosition(this.boardSprite);
-        return new Point(Math.floor(point.x / 2), Math.floor(point.y / 2));
+        return new Point(Math.floor(point.x / this.scale), Math.floor(point.y / this.scale));
     }
     
     // Returns true if this game is run entirely in the client, with no server connection
@@ -729,7 +730,7 @@ export class Client extends EventEmitter
         let cursorBoard = new Board(crossSize, crossSize);
         cursorBoard.clear(this.previewPalette.length - 1);
         cursorBoard.drawCross(new Point(Math.floor(cursorBoard.width / 2), Math.floor(cursorBoard.height / 2)), crossRadius, 0);
-        this.cursor = new PIXI.Sprite(rtt(cursorBoard, scale, this.previewPalette));
+        this.cursor = new PIXI.Sprite(rtt(cursorBoard, this.scale, this.previewPalette));
         this.boardSprite.addChild(this.cursor);
 
         // Draw the card's shape to a board.  (This will return an empty board if there is no shape).
@@ -738,7 +739,7 @@ export class Client extends EventEmitter
         // Take the outline of the shape
         let previewBoard = new Board(shapeBoard.width, shapeBoard.height);
         previewBoard.outline(0, 0, this.previewPalette.length - 1, shapeBoard);
-        this.previewCursor = new PIXI.Sprite(rtt(previewBoard, scale, this.previewPalette));
+        this.previewCursor = new PIXI.Sprite(rtt(previewBoard, this.scale, this.previewPalette));
         this.boardSprite.addChild(this.previewCursor);
 
         this.updateCursor();
@@ -750,8 +751,8 @@ export class Client extends EventEmitter
     updateCursor()
     {
         let point = this.getBoardPosition();
-        this.cursor.x = scale * (point.x - Math.floor(this.cursor.width / (2 * scale)));
-        this.cursor.y = scale * (point.y - Math.floor(this.cursor.height / (2 * scale)));
+        this.cursor.x = this.scale * (point.x - Math.floor(this.cursor.width / (2 * this.scale)));
+        this.cursor.y = this.scale * (point.y - Math.floor(this.cursor.height / (2 * this.scale)));
         
         let onBoard = (point.x >= 0 && point.x < game.size && point.y >= 0 && point.y < game.size);
         this.cursor.visible = onBoard;
@@ -768,8 +769,8 @@ export class Client extends EventEmitter
             this.cursor.alpha = 0.5;
         }
 
-        this.previewCursor.x = scale * (playPosition.x - Math.floor(this.previewCursor.width / (2 * scale)));
-        this.previewCursor.y = scale * (playPosition.y - Math.floor(this.previewCursor.height / (2 * scale)));
+        this.previewCursor.x = this.scale * (playPosition.x - Math.floor(this.previewCursor.width / (2 * this.scale)));
+        this.previewCursor.y = this.scale * (playPosition.y - Math.floor(this.previewCursor.height / (2 * this.scale)));
 
         this.setCursorStyle(onBoard ? "none" : "");
     }
@@ -808,7 +809,7 @@ export class Client extends EventEmitter
     updateBoard(updateCount = true)
     {
         let oldTexture = this.boardSprite.texture;
-        this.boardSprite.texture = rtt(game.board, scale, this.palette, this.buffer);
+        this.boardSprite.texture = rtt(game.board, this.scale, this.palette, this.buffer);
         oldTexture.destroy(true);
         
         if (updateCount)
@@ -824,7 +825,7 @@ export class Client extends EventEmitter
     updateOverlayBoard()
     {
         let oldTexture = this.overlaySprite.texture;
-        this.overlaySprite.texture = rtt(this.overlayBoard, scale, this.previewPalette, this.overlayBuffer);
+        this.overlaySprite.texture = rtt(this.overlayBoard, this.scale, this.previewPalette, this.overlayBuffer);
         oldTexture.destroy(true);
     }
 }
