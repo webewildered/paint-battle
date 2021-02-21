@@ -70,6 +70,7 @@ $(function()
     function startGame(rules: Rules)
     {
         $('#lobby').hide();
+        $('#rulesForm').hide();
         $('#playerList').empty();
 
         let playerNames: string[] = [];
