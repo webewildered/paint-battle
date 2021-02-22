@@ -23,7 +23,7 @@ const cardWidth = 100;
 const cardHeight = 150;
 const playerHeight = cardHeight + 20;
 
-type Socket = SocketIOClient.Socket;
+type Socket = SocketIOClient.Emitter;
 
 let game: Game;
 let client: Client;

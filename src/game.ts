@@ -1,5 +1,5 @@
 import { Point, PaintStep, PaintResult, Board } from './board';
-const EventEmitter = require('events');
+import { EventEmitter } from 'events';
 
 export enum CardType
 {
@@ -157,6 +157,7 @@ export class Game extends EventEmitter
     players: Player[];
     queue: Action[];
     numDisconnected: number;
+    currentPlayer: number;
 
     constructor(numPlayers: number, shuffle: boolean, rules: Rules)
     {
@@ -166,6 +167,7 @@ export class Game extends EventEmitter
         this.setMaxListeners(100);
 
         this.rules = rules;
+        this.currentPlayer = -1;
 
         // Initialize the game board
         this.board = new Board(this.size, this.size);
@@ -271,7 +273,6 @@ export class Game extends EventEmitter
         }
 
         // Start the first player's turn
-        this.currentPlayer = -1;
         this.nextTurn();
     }
 

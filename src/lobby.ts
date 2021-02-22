@@ -1,10 +1,44 @@
 // This requires the socket.io.js client in the global scope
+import { GameEvent, GameLog } from './protocol';
 import { Client } from './client';
 import { Rules } from './game';
 import { Socket } from 'socket.io-client';
 import * as io from 'socket.io-client';
+import { EventEmitter } from 'events';
 
 type Socket = SocketIOClient.Socket;
+
+class FakeSocket implements SocketIOClient.Emitter
+{
+    private emitter: EventEmitter;
+
+    constructor()
+    {
+        this.emitter = new EventEmitter();
+    }
+
+    on( event: string, fn: Function ): SocketIOClient.Emitter
+    {
+        this.emitter.on(event, fn as (...args: any[]) => void);
+        return this;
+    }
+
+    emit( event: string, ...args: any[] ): SocketIOClient.Emitter
+    {
+        this.emitter.emit(event, ...args);
+        return this;
+    }
+
+    // Unimplemented stuff
+    addEventListener( event: string, fn: Function ): SocketIOClient.Emitter { throw new Error('Not implemented'); }
+    once( event: string, fn: Function ): SocketIOClient.Emitter { throw new Error('Not implemented'); }
+    off( event: string, fn?: Function ): SocketIOClient.Emitter { throw new Error('Not implemented'); }
+    removeListener( event: string, fn?: Function ): SocketIOClient.Emitter { throw new Error('Not implemented'); }
+    removeEventListener( event: string, fn?: Function ): SocketIOClient.Emitter { throw new Error('Not implemented'); }
+    removeAllListeners(): SocketIOClient.Emitter { throw new Error('Not implemented'); }
+    listeners( event: string ):Function[] { throw new Error('Not implemented'); }
+    hasListeners( event: string ):boolean { throw new Error('Not implemented'); }
+}
 
 class LobbyPlayer
 {
@@ -25,7 +59,8 @@ $(function()
     let key = '';
     let localPlayerId = -1;
     let lobbyPlayers: LobbyPlayer[] = [];
-    let socket = io() as Socket;
+    let webSocket = io() as Socket;
+    let socket: SocketIOClient.Emitter = webSocket;
     
     //
     // Helper functions
@@ -67,14 +102,12 @@ $(function()
         });
     }
 
-    function startGame(rules: Rules)
+    function startGame(playerNames: string[], localPlayerId: number, rules: Rules)
     {
         $('#lobby').hide();
         $('#rulesForm').hide();
         $('#playerList').empty();
 
-        let playerNames: string[] = [];
-        lobbyPlayers.forEach(player => playerNames.push(player.name));
         new Client(socket, playerNames, localPlayerId, rules);
     }
     
@@ -87,25 +120,70 @@ $(function()
     }
     else
     {
+        let hideAll = () =>
+        {
+            $('#joinForm').hide();
+            $('#localForm').hide();
+            $('#rulesForm').hide();
+            $('#replayForm').hide();
+        }
+
         // Testing option - quick start a local game
         $('#rulesForm').show();
         $('#localForm').show().on('submit', () =>
         {
-            socket.close();
-            $('#joinForm').hide();
-            $('#localForm').hide();
-            $('#rulesForm').hide();
+            hideAll();
+            webSocket.close();
             let numPlayers = $('#localPlayersInput').val() as number;
-            localPlayerId = -1;
-            lobbyPlayers = [];
+            let playerNames: string[] = [];
             for (let i = 0; i < numPlayers; i++)
             {
                 addPlayer('Player ' + (i + 1));
             }
-            startGame(getRules());
+            startGame(playerNames, -1, getRules());
             return false;
         });
         host = true;
+
+        // Testing option - replay a log of a previous game
+        $('#replayForm').show();
+        $('#replayFile').on('change', (event) =>
+        {
+            // Read the replay file
+            const target = event.target as HTMLInputElement;
+            if (!target.files || target.files.length !== 1)
+            {
+                return;
+            }
+            const file = target.files[0];
+            if (file.type !== 'application/json')
+            {
+                console.log('Unexpected file type ' + file.type);
+            }
+            const reader = new FileReader();
+            reader.addEventListener('load', (event: ProgressEvent<FileReader>) =>
+            {
+                if (!event.target || !event.target.result || typeof(event.target.result) !== 'string')
+                {
+                    console.log('Could not load file');
+                    return;
+                }
+                let log = JSON.parse(event.target.result) as GameLog;
+
+                hideAll();
+                webSocket.close();
+                let fakeSocket = new FakeSocket();
+                socket = fakeSocket;
+
+                // TODO player ID 0 so that the client's game won't shuffle, figure out a better way
+                startGame(log.players, 0, log.rules);
+                for (const gameEvent of log.events)
+                {
+                    fakeSocket.emit(gameEvent.event, ...gameEvent.args);
+                }
+            });
+            reader.readAsText(file);
+        });
     }
     
     // Show the lobby once the player joins
@@ -161,6 +239,17 @@ $(function()
             }
         });
 
+        socket.on('log', (log: GameLog) =>
+        {
+            let a = $('<a>');
+            a.attr('href', 'data:application/json;charset=UTF-8,' + JSON.stringify(log));
+            a.attr('download', 'gamelog_' + key + '.json');
+            a.text('Download log');
+            $('body').append(a);
+            a[0].click();
+            //a.trigger('click');
+        });
+
         // When the server rejects the join
         socket.on('error', () =>
         {
@@ -171,7 +260,12 @@ $(function()
 
         // When the game begins
         // TODO - need to forbid inputs until ready.  can't send any game messages to the server until it tells us it's ready.
-        socket.on('start', startGame);
+        socket.on('start', (rules: Rules) =>
+        {
+            let playerNames: string[] = [];
+            lobbyPlayers.forEach(player => playerNames.push(player.name));
+            startGame(playerNames, localPlayerId, rules);
+        });
 
         // Send first message to the server
         socket.emit('join', playerName, key);

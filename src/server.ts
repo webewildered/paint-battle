@@ -1,5 +1,6 @@
 import { Rules, Action, Reveal, Game } from './game';
 import { Socket, Server } from 'socket.io';
+import { GameEvent, GameLog } from './protocol';
 
 module.exports = function(http: Server)
 {
@@ -24,6 +25,7 @@ module.exports = function(http: Server)
         players: Player[];
         ready: number;
         game: Game|undefined;
+        log: GameEvent[] = [];
 
         constructor(key: string)
         {
@@ -43,6 +45,23 @@ module.exports = function(http: Server)
             }
 
             return -1;
+        }
+
+        broadcastMessage(event: string, ...args: any[])
+        {
+            this.relayMessage(undefined, event, ...args);
+        }
+
+        relayMessage(source: Player|undefined, event: string, ...args: any[])
+        {
+            this.broadcast((socket: Socket, name: string) =>
+            {
+                socket.emit(event, ...args);
+                if (this.game)
+                {
+                    this.log.push(new GameEvent(event, args));
+                }
+            }, source);
         }
 
         // Call f for each connected player except sourcePlayer 
@@ -99,12 +118,28 @@ module.exports = function(http: Server)
                 joinRoom = rooms.get(key);
             }
             
-            // If the room wasn't found or the game already started, give up
-            if (!joinRoom || joinRoom.game)
+            // If the room wasn't found, return an error
+            if (!joinRoom)
             {
                 socket.emit('error');
                 return;
             }
+
+            // If the game already began, return the game log
+            if (joinRoom.game)
+            {
+                // Generate the log
+                let names: string[] = [];
+                for (const player of joinRoom.players)
+                {
+                    names.push(player.name);
+                }
+                let log = new GameLog(names, joinRoom.game.rules, joinRoom.log);
+
+                socket.emit('log', log);
+                return;
+            }
+
             let room: Room = joinRoom;
 
             // Notify the other players in the room and collect their names
@@ -145,7 +180,7 @@ module.exports = function(http: Server)
                 }
                 
                 // Notify the other players
-                room.broadcast((socket: Socket) => socket.emit('removePlayer', playerId));
+                room.broadcastMessage('removePlayer', playerId);
             });
 
             // Listen for game start
@@ -166,7 +201,7 @@ module.exports = function(http: Server)
                 }
                 
                 // Broadcast the start message
-                room.broadcast((socket: Socket) => socket.emit('start', rules));
+                room.broadcastMessage('start', rules);
                 console.log(key + ':' + playerId + ' start');
 
                 // Ignore duplicate messages
@@ -223,7 +258,7 @@ module.exports = function(http: Server)
                         {
                             // Failed - bug or cheating
                             console.log(key + ':' + playerId + ' play error ' + error);
-                            reveals.length = 0;
+                            reveals = [];
                             return;
                             // TODO -- then what, DC the player?
                         }
@@ -233,8 +268,8 @@ module.exports = function(http: Server)
 
                         // Forward the action to the other players
                         action.reveals = reveals;
-                        room.broadcast((socket: Socket) => socket.emit('play', action), player);
-                        reveals.length = 0;
+                        room.relayMessage(player, 'play', action);
+                        reveals = [];
                     });
                 });
             });
@@ -251,7 +286,7 @@ module.exports = function(http: Server)
                 if (room.ready === room.players.length)
                 {
                     room.game.begin();
-                    room.broadcast((socket: Socket) => socket.emit('ready'));
+                    room.broadcastMessage('ready');
                 }
             });
         });
