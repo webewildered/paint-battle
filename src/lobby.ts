@@ -191,6 +191,7 @@ $(function()
     {
         $('#joinForm').hide();
         $('#localForm').hide();
+        $('#replayForm').hide();
         
         let playerName = $('#nameInput').val() as string;
 

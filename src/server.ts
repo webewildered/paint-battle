@@ -54,13 +54,13 @@ module.exports = function(http: Server)
 
         relayMessage(source: Player|undefined, event: string, ...args: any[])
         {
+            if (this.game)
+            {
+                this.log.push(new GameEvent(event, args));
+            }
             this.broadcast((socket: Socket, name: string) =>
             {
                 socket.emit(event, ...args);
-                if (this.game)
-                {
-                    this.log.push(new GameEvent(event, args));
-                }
             }, source);
         }
 
