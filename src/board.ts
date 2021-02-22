@@ -469,7 +469,6 @@ export class Board
         let rSquared = r * r;
         const lineStep = this.linefStep(start, end, clamp, single, (point: Point) => 
         {
-            console.log('line at ' + point.x + ', ' + point.y);
             // Check if the line gets blocked
             if (!f(point)) { return false; }
 

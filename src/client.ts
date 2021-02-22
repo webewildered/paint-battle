@@ -183,7 +183,6 @@ export class Client extends EventEmitter
 
         game.on('beginTurn', (playerId: number) =>
         {
-            this.textureReport();
             if (this.players[playerId].local)
             {
                 this.status.text = 'Your turn - play a card!';

@@ -126,7 +126,7 @@ $(function()
             $('#localForm').hide();
             $('#rulesForm').hide();
             $('#replayForm').hide();
-        }
+        };
 
         // Testing option - quick start a local game
         $('#rulesForm').show();
