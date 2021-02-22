@@ -138,7 +138,7 @@ $(function()
             let playerNames: string[] = [];
             for (let i = 0; i < numPlayers; i++)
             {
-                addPlayer('Player ' + (i + 1));
+                playerNames.push('Player ' + (i + 1));
             }
             startGame(playerNames, -1, getRules());
             return false;

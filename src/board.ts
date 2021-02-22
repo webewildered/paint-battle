@@ -24,12 +24,16 @@ export class Point
     sub(point: Point) { return this.binary(point, (a: number, b: number) => a - b); }
     mul(point: Point) { return this.binary(point, (a: number, b: number) => a * b); }
     div(point: Point) { return this.binary(point, (a: number, b: number) => a / b); }
+    min(point: Point) { return this.binary(point, (a: number, b: number) => Math.min(a, b)); }
+    max(point: Point) { return this.binary(point, (a: number, b: number) => Math.max(a, b)); }
     dot(point: Point) { return this.mul(point).sum(); }
     abs() { return this.unary((a: number) => Math.abs(a)); }
     sign() { return this.unary((a: number) => Math.sign(a)); }
     floor() { return this.unary((a: number) => Math.floor(a)); }
     ceil() { return this.unary((a: number) => Math.ceil(a)); }
     sum() { return this.x + this.y; }
+    lengthSquared() { return this.dot(this); }
+    distanceSquared(point: Point) { return this.sub(point).lengthSquared(); }
 
     equal(point: Point): boolean
     {
@@ -216,17 +220,33 @@ export class Board
             return true;
         };
     }
+
+    // Optimization for dijkstrafStep to avoid constant realloc and clear
+    dijkstraBuffer: Board | undefined;
     
     // Returns a function that will execute dijkstraf() in steps, increasing the maximum cost each time it is called by a
     // delta that you pass in (defaults to 1).  The step function returns false when it is complete.
     dijkstrafStep(start: Point, maxCost: number, f: (point: Point) => Node[])
     {
         // Buffer tracking whether each pixel has been visited.  0 = no, 1 = yes
-        let visited = this.buffer(0);
+        let visited: Board;
+        if (this.dijkstraBuffer)
+        {
+            visited = this.dijkstraBuffer;
+            this.dijkstraBuffer = undefined;
+        }
+        else
+        {
+            visited = this.buffer(0);
+        }
         
         // Visit pixels in cost order beginning from the start point
         let queue = new PriorityQueue({ comparator: function(a: Node, b: Node) { return b.cost - a.cost; }}); // lower cost -> higher priority
         queue.enqueue(new Node(start, 0));
+
+        // Track the bounding box of pixels visited
+        let min: Point = start;
+        let max: Point = start;
 
         // Return a stepping function
         let stepCost = 0;
@@ -243,6 +263,8 @@ export class Board
                 if (visited.get(item) === 0)
                 {
                     visited.set(item, 1);
+                    min = min.min(item);
+                    max = max.max(item);
                     let neighbors = f(item);
                     for (const neighbor of neighbors)
                     {
@@ -253,6 +275,19 @@ export class Board
                         }
                     }
                 }
+            }
+
+            // Clear the buffer and save it for possible reuse
+            if (!this.dijkstraBuffer)
+            {
+                for (let x = min.x; x <= max.x; x++)
+                {
+                    for (let y = min.y; y <= max.y; y++)
+                    {
+                        visited.set(new Point(x, y), 0);
+                    }
+                }
+                this.dijkstraBuffer = visited;
             }
             
             return false;
@@ -430,23 +465,22 @@ export class Board
     {
         const clamp = true;
         const single = false;
-        const mask = this.buffer();
         let current = start;
+        let rSquared = r * r;
         const lineStep = this.linefStep(start, end, clamp, single, (point: Point) => 
         {
+            console.log('line at ' + point.x + ', ' + point.y);
             // Check if the line gets blocked
             if (!f(point)) { return false; }
 
             // Remember the last successful line pixel
             current = point;
 
-            // Draw a circle centered at the line pixel onto a mask, then floodfill the mask
-            mask.clear(0);
-            mask.drawCircle(point, r, 1);
-            mask.floodf(point, (point: Point) =>
+            // Floodfill a circle centered at the line pixel
+            this.floodf(point, (point: Point) =>
             {
                 // Check if the pixel is within the circle and not blocked by f
-                if (mask.get(point) === 1 && f(point))
+                if (point.distanceSquared(current) <= rSquared && f(point))
                 {
                     // Only count pixels that are not already set
                     if (this.get(point) !== c)

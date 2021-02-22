@@ -185,15 +185,15 @@ export class Game extends EventEmitter
         const countHigh = [0, 7, 7, 7, 8, 8, 9][numPlayers];
 
         let addCard = (count: number, card: Card) => { this.deck = this.deck.concat(Array<Card>(count).fill(card)); };
-        addCard(countLow, new BoxCard(45, 21));
-        addCard(countLow, new BoxCard(21, 45));
-        addCard(countMed, new LineCard(140));
-        addCard(countMed, new GrowCard(4));
+        // addCard(countLow, new BoxCard(45, 21));
+        // addCard(countLow, new BoxCard(21, 45));
+        // addCard(countMed, new LineCard(140));
+        // addCard(countMed, new GrowCard(4));
         addCard(countHigh, new PaintCard(4, 600));
-        addCard(countLow, new PolyCard(3, 25.5, 0.2));
-        addCard(countLow, new PolyCard(5, 23.5, 0.4));
-        addCard(countLow, new PolyCard(7, 21.5, 0.6));
-        addCard(countHigh, new DynamiteCard(20.5));
+        // addCard(countLow, new PolyCard(3, 25.5, 0.2));
+        // addCard(countLow, new PolyCard(5, 23.5, 0.4));
+        // addCard(countLow, new PolyCard(7, 21.5, 0.6));
+        // addCard(countHigh, new DynamiteCard(20.5));
         
         // Eraser doesn't do anything with blocking enabled
         if (!rules.blocking)
