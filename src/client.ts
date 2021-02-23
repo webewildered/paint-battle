@@ -319,7 +319,7 @@ export class Client extends EventEmitter
             // Another player left the game
             socket.on('removePlayer', (playerId: number) =>
             {
-                game.removePlayer(playerId);
+                //game.removePlayer(playerId);
             });
             
             // Notify the server that this client is ready to receive messages

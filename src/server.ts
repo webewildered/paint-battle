@@ -9,14 +9,7 @@ module.exports = function(http: Server)
 
     class Player
     {
-        name: string;
-        socket: Socket;
-        
-        constructor(name: string, socket: Socket)
-        {
-            this.name = name;
-            this.socket = socket;
-        }
+        constructor(public name: string, public key: string, public socket: Socket) {} 
     }
 
     class Room
@@ -26,12 +19,25 @@ module.exports = function(http: Server)
         ready: number;
         game: Game|undefined;
         log: GameEvent[] = [];
+        reveals: Reveal[] = [];
 
         constructor(key: string)
         {
             this.key = key;
             this.players = [];
             this.ready = 0;
+        }
+
+        getPlayerIdFromKey(key: string)
+        {
+            for (let i = 0; i < this.players.length; i++)
+            {
+                if (this.players[i].key === key)
+                {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         getPlayerId(socket: Socket)
@@ -43,7 +49,6 @@ module.exports = function(http: Server)
                     return i;
                 }
             }
-
             return -1;
         }
 
@@ -77,30 +82,35 @@ module.exports = function(http: Server)
         }
     }
 
+    const keyLength = 6;
+    function makeKey(): string
+    {
+        const keyChars = 'bcdfghjklmnpqrstvwxyz';
+        let key = '';
+        for (let i = 0; i < keyLength; i++)
+        {
+            key += keyChars[Math.floor(Math.random() * keyChars.length)];
+        }
+        return key;
+    };
+
     // When a player connects
     io.on('connection', (socket: Socket) => 
     {
         // When a player joins or creates a room
-        socket.on('join', (name, key) =>
+        socket.on('join', (name: string, keyIn: string | undefined, playerKeyIn: string | undefined) =>
         {
-            const keyLength = 6;
-            const keyChars = 'bcdfghjklmnpqrstvwxyz';
-
             // Find or create the room
+            const tries = 5;
             let joinRoom: Room|undefined;
-            if (key.length === 0)
+            let key: string = '';
+            if (!keyIn || keyIn.length === 0)
             {
                 // Generate a random key
-                const tries = 5;
                 for (let i = 0; i < tries; i++)
                 {
-                    for (let i = 0; i < keyLength; i++)
-                    {
-                        key += keyChars[Math.floor(Math.random() * keyChars.length)];
-                    }
-
-                    // Check for key collision
-                    if (!rooms.has(key))
+                    key = makeKey();
+                    if (!rooms.has(key)) // Check for key collision
                     {
                         // Create the room
                         joinRoom = new Room(key);
@@ -112,9 +122,9 @@ module.exports = function(http: Server)
                     key = '';
                 }
             }
-            else if (key.length === 6)
+            else if (keyIn.length === keyLength)
             {
-                key = key.toLowerCase();
+                key = keyIn.toLowerCase();
                 joinRoom = rooms.get(key);
             }
             
@@ -124,37 +134,10 @@ module.exports = function(http: Server)
                 socket.emit('error');
                 return;
             }
-
-            // If the game already began, return the game log
-            if (joinRoom.game)
-            {
-                // Generate the log
-                let names: string[] = [];
-                for (const player of joinRoom.players)
-                {
-                    names.push(player.name);
-                }
-                let log = new GameLog(names, joinRoom.game.rules, joinRoom.log);
-
-                socket.emit('log', log);
-                return;
-            }
-
+            
             let room: Room = joinRoom;
 
-            // Notify the other players in the room and collect their names
-            let playerNames: string[] = [];
-            room.broadcast((socket: Socket, playerName: string) =>
-            {
-                socket.emit('addPlayer', name);
-                playerNames.push(playerName);
-            });
-
-            // Send the joining player confirmation and the other players' names
-            socket.emit('join', key, playerNames);
-            room.players.push(new Player(name, socket));
-
-            // Notify the other players in case of disconnect
+            // Listen for game events from the player's socket
             socket.on('disconnect', () =>
             {
                 // Find the player
@@ -171,7 +154,7 @@ module.exports = function(http: Server)
                 if (room.game)
                 {
                     // Notify the game to skip the player
-                    room.game.removePlayer(playerId);
+                    //room.game.removePlayer(playerId);
                 }
                 else
                 {
@@ -182,6 +165,128 @@ module.exports = function(http: Server)
                 // Notify the other players
                 room.broadcastMessage('removePlayer', playerId);
             });
+
+            socket.on('play', (action: Action) =>
+            {
+                let playerId = room.getPlayerId(socket);
+                if (playerId < 0)
+                {
+                    console.log('play from unknown socket');
+                    return;
+                }
+
+                let game = room.game;
+                if (!game || game.currentPlayer !== playerId)
+                {
+                    console.log(key + ':' + playerId + ' play error');
+                    return;
+                }
+
+                // Try to play the action
+                let step;
+                try
+                {
+                    action.reveals = []; // Client may not send the server reveals
+                    step = game.play(action);
+                    if (!step) { throw new Error('no step'); }
+                }
+                catch (error)
+                {
+                    // Failed - bug or cheating
+                    console.log(key + ':' + playerId + ' play error ' + error);
+                    room.reveals = [];
+                    return;
+                    // TODO -- then what, DC the player?
+                }
+
+                // Run the action to completion
+                while (step()) {}
+
+                // Forward the action to the other players
+                action.reveals = room.reveals;
+                room.relayMessage(room.players[playerId], 'play', action);
+                room.reveals = [];
+            });
+            
+            // If the game already began, try to rejoin the player
+            if (room.game)
+            {
+                let game = room.game;
+                // Generate the log
+                let names: string[] = [];
+                for (const player of room.players)
+                {
+                    names.push(player.name);
+                }
+                let log = new GameLog(names, game.rules, room.log);
+
+                let playerId = (playerKeyIn && playerKeyIn.length === keyLength) ? room.getPlayerIdFromKey(playerKeyIn) : -1;
+                if (playerId < 0)
+                {
+                    // Return the log for debugging
+                    socket.emit('log', log);
+                    return;
+                }
+
+                // Replay the game messages for the rejoined player
+                let player = room.players[playerId];
+                player.socket = socket;
+                socket.emit('join', key, playerKeyIn, names.slice(0, playerId));
+                for (let i = playerId + 1; i < room.players.length; i++)
+                {
+                    socket.emit('addPlayer', room.players[i].name);
+                }
+                socket.emit('start', game.rules);
+                socket.on('ready', () =>
+                {
+                    // Notify the player of cards in their hand
+                    for (const cardId of game.players[])
+
+                    // Notify the player of all events preceding the current turn
+                    for (const event of log.events)
+                    {
+                        socket.emit(event.event, ...event.args);
+                    }
+                });
+
+                return;
+            }
+
+            // Check that a valid name was provided
+            if (!name || typeof(name) !== 'string' || name.length === 0)
+            {
+                socket.emit('error');
+                return;
+            }
+
+            // Notify the other players in the room and collect their names
+            let playerNames: string[] = [];
+            room.broadcast((socket: Socket, playerName: string) =>
+            {
+                socket.emit('addPlayer', name);
+                playerNames.push(playerName);
+            });
+
+            // Generate a key for the new player
+            let playerKey: string | undefined;
+            for (let i = 0; i < tries; i++)
+            {
+                playerKey = makeKey();
+                if (room.getPlayerIdFromKey(playerKey) < 0)
+                {
+                    break;
+                }
+                playerKey = undefined;
+            }
+            if (!playerKey)
+            {
+                socket.emit('error');
+                return;
+            }
+
+            // Send the joining player confirmation and the other players' names
+            socket.emit('join', key, playerKey, playerNames);
+            room.players.push(new Player(name, playerKey, socket));
 
             // Listen for game start
             socket.on('start', (rulesIn: Rules) =>
@@ -221,7 +326,6 @@ module.exports = function(http: Server)
                 const shuffle = true;
                 let game = new Game(room.players.length, shuffle, rules);
                 room.game = game;
-                let reveals: Reveal[] = []; // List of reveals to send with the next play message
 
                 game.on('deal', (playerId: number, cardId: number) =>
                 {
@@ -232,45 +336,7 @@ module.exports = function(http: Server)
 
                 game.on('reveal', (cardId: number) =>
                 {
-                    reveals.push({cardId:cardId, deckId:game.shuffle[cardId]});
-                });
-
-                game.on('beginTurn', (playerId: number) =>
-                {
-                    // On a player's turn, listen for their action
-                    let player = room.players[playerId];
-                    player.socket.on('play', (action: Action) =>
-                    {
-                        console.log(key + ':' + playerId + ' play');
-
-                        // Stop listening
-                        player.socket.removeAllListeners('play');
-
-                        // Try to play the action
-                        let step;
-                        try
-                        {
-                            action.reveals = []; // Client may not send the server reveals
-                            step = game.play(action);
-                            if (!step) { throw new Error('no step'); }
-                        }
-                        catch (error)
-                        {
-                            // Failed - bug or cheating
-                            console.log(key + ':' + playerId + ' play error ' + error);
-                            reveals = [];
-                            return;
-                            // TODO -- then what, DC the player?
-                        }
-
-                        // Run the action to completion
-                        while (step()) {}
-
-                        // Forward the action to the other players
-                        action.reveals = reveals;
-                        room.relayMessage(player, 'play', action);
-                        reveals = [];
-                    });
+                    room.reveals.push({cardId:cardId, deckId:game.shuffle[cardId]});
                 });
             });
 

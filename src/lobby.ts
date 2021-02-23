@@ -5,6 +5,10 @@ import { Rules } from './game';
 import { Socket } from 'socket.io-client';
 import * as io from 'socket.io-client';
 import { EventEmitter } from 'events';
+//import Cookies from 'js-cookie';
+//import Cookies = require("../node_modules/@types/js-cookie");
+//import Cookies from 'js-cookie';
+import * as Cookies from 'js-cookie';
 
 type Socket = SocketIOClient.Socket;
 
@@ -50,6 +54,9 @@ class LobbyPlayer
     name: string;
     li: JQuery<HTMLElement>;
 }
+
+const gameKeyCookie = 'gameKey';
+const playerKeyCookie = 'playerKey';
 
 // Entry point.
 // Manages the lobby UI in index.html.
@@ -110,24 +117,119 @@ $(function()
 
         new Client(socket, playerNames, localPlayerId, rules);
     }
+
+    function hideAll()
+    {
+        $('#joinForm').hide();
+        $('#localForm').hide();
+        $('#rulesForm').hide();
+        $('#replayForm').hide();
+    };
+
+    //
+    // Lobby messages
+    //
+
+    // When I enter the lobby
+    socket.on('join', (gameKey: string, playerKey: string, players: string[]) =>
+    {
+        // Save the keys for rejoin
+        Cookies.set(gameKeyCookie, gameKey, { expires: 7 });
+        Cookies.set(playerKeyCookie, playerKey, { expires: 7 });
+
+        $('#lobby').show();
+        key = gameKey;
+        localPlayerId = players.length;
+        lobbyPlayers = [];
+        let url = window.location.origin + window.location.pathname + '?' + key;
+        $('#gameUrl').html(url).attr('href', url);
+        for (let i = 0; i < players.length; i++)
+        {
+            addPlayer(players[i]);
+        }
+        addPlayer('me'); // TODO playerName);
+        if (players.length === 0)
+        {
+            becomeHost();
+        }
+    });
+
+    // When another player enters the lobby
+    socket.on('addPlayer', (name: string) =>
+    {
+        addPlayer(name);
+    });
+
+    // When another player leaves the lobby
+    socket.on('removePlayer', (id: number) =>
+    {
+        lobbyPlayers[id].li.remove();
+        lobbyPlayers.splice(id, 1);
+        if (id === 0)
+        {
+            lobbyPlayers[0].li.append(' (host)');
+        }
+        if (localPlayerId > id)
+        {
+            localPlayerId--;
+            if (localPlayerId === 0)
+            {
+                becomeHost();
+            }
+        }
+    });
+
+    socket.on('log', (log: GameLog) =>
+    {
+        let a = $('<a>');
+        a.attr('href', 'data:application/json;charset=UTF-8,' + JSON.stringify(log));
+        a.attr('download', 'gamelog_' + key + '.json');
+        a.text('Download log');
+        $('body').append(a);
+        a[0].click();
+        //a.trigger('click');
+    });
+
+    // When the server rejects the join
+    socket.on('error', () =>
+    {
+        let url = window.location.origin + window.location.pathname;
+        $('#startUrl').attr('href', url);
+        $('#error').show();
+    });
+
+    // When the game begins
+    // TODO - need to forbid inputs until ready.  can't send any game messages to the server until it tells us it's ready.
+    socket.on('start', (rules: Rules) =>
+    {
+        // Stop listening on the socket, client will take it over
+        socket.removeAllListeners();
+
+        let playerNames: string[] = [];
+        lobbyPlayers.forEach(player => playerNames.push(player.name));
+        startGame(playerNames, localPlayerId, rules);
+    });
+
+    //
+    // Browser interface
+    //
     
     // Join an existing lobby or create a new one
     key = document.location.search.slice(1);
     if (key.length === 6)
     {
+        // Check for rejoin
+        if (key === Cookies.get(gameKeyCookie))
+        {
+            socket.emit('join', '', key, Cookies.get(playerKeyCookie));
+            return;
+        }
+        
         host = false;
         $('#joinButton').text("Join game");
     }
     else
     {
-        let hideAll = () =>
-        {
-            $('#joinForm').hide();
-            $('#localForm').hide();
-            $('#rulesForm').hide();
-            $('#replayForm').hide();
-        };
-
         // Testing option - quick start a local game
         $('#rulesForm').show();
         $('#localForm').show().on('submit', () =>
@@ -189,87 +291,9 @@ $(function()
     // Show the lobby once the player joins
     $('#joinForm').show().on('submit', () =>
     {
-        $('#joinForm').hide();
-        $('#localForm').hide();
-        $('#replayForm').hide();
+        hideAll();
         
         let playerName = $('#nameInput').val() as string;
-
-        // When I enter the lobby
-        socket.on('join', (gameKey: string, players: string[]) =>
-        {
-            $('#lobby').show();
-            key = gameKey;
-            localPlayerId = players.length;
-            lobbyPlayers = [];
-            let url = window.location.origin + window.location.pathname + '?' + key;
-            $('#gameUrl').html(url).attr('href', url);
-            for (let i = 0; i < players.length; i++)
-            {
-                addPlayer(players[i]);
-            }
-            addPlayer(playerName);
-            if (players.length === 0)
-            {
-                becomeHost();
-            }
-        });
-
-        // When another player enters the lobby
-        socket.on('addPlayer', (name: string) =>
-        {
-            addPlayer(name);
-        });
-
-        // When another player leaves the lobby
-        socket.on('removePlayer', (id: number) =>
-        {
-            lobbyPlayers[id].li.remove();
-            lobbyPlayers.splice(id, 1);
-            if (id === 0)
-            {
-                lobbyPlayers[0].li.append(' (host)');
-            }
-            if (localPlayerId > id)
-            {
-                localPlayerId--;
-                if (localPlayerId === 0)
-                {
-                    becomeHost();
-                }
-            }
-        });
-
-        socket.on('log', (log: GameLog) =>
-        {
-            let a = $('<a>');
-            a.attr('href', 'data:application/json;charset=UTF-8,' + JSON.stringify(log));
-            a.attr('download', 'gamelog_' + key + '.json');
-            a.text('Download log');
-            $('body').append(a);
-            a[0].click();
-            //a.trigger('click');
-        });
-
-        // When the server rejects the join
-        socket.on('error', () =>
-        {
-            let url = window.location.origin + window.location.pathname;
-            $('#startUrl').attr('href', url);
-            $('#error').show();
-        });
-
-        // When the game begins
-        // TODO - need to forbid inputs until ready.  can't send any game messages to the server until it tells us it's ready.
-        socket.on('start', (rules: Rules) =>
-        {
-            // Stop listening on the socket, client will take it over
-            socket.removeAllListeners();
-
-            let playerNames: string[] = [];
-            lobbyPlayers.forEach(player => playerNames.push(player.name));
-            startGame(playerNames, localPlayerId, rules);
-        });
 
         // Send first message to the server
         socket.emit('join', playerName, key);
