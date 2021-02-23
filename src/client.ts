@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { CardType, Card, BoxCard, PolyCard, LineCard, PaintCard, Rules, Action, Reveal, Game } from './game';
 import { Point, Board } from './board';
+import { GameEvent } from './protocol';
 const EventEmitter = require('events');
 
 // Constants
@@ -148,7 +149,7 @@ export class Client extends EventEmitter
     status: PIXI.Text;
     cancel: PIXI.Graphics;
 
-    constructor(socket: Socket, playerNames: string[], localPlayerId: number, rules: Rules)
+    constructor(socket: Socket, playerNames: string[], localPlayerId: number, rules: Rules, init: GameEvent[] = [])
     {
         super();
         
@@ -157,13 +158,14 @@ export class Client extends EventEmitter
 
         this.scale = Math.floor(600 / rules.size);
 
-        //
-        // Create the game and listen for its events
-        //
-
+        // Create the game
         let numPlayers = playerNames.length;
         const shuffle = this.isLocalGame();
         game = new Game(numPlayers, shuffle, rules);
+
+        //
+        // Listen for events from the game
+        //
 
         game.on('updateBoard', () =>
         {
@@ -181,8 +183,13 @@ export class Client extends EventEmitter
             this.players[playerId].play(cardId);
         });
 
-        game.on('beginTurn', (playerId: number) =>
+        let interactive = false;
+        let setTurn = (playerId: number) =>
         {
+            if (!interactive)
+            {
+                return;
+            }
             if (this.players[playerId].local)
             {
                 this.status.text = 'Your turn - play a card!';
@@ -192,7 +199,8 @@ export class Client extends EventEmitter
             {
                 this.status.text = this.players[playerId].name + '\'s turn';
             }
-        });
+        };
+        game.on('beginTurn', setTurn);
 
         // Create the app
         app = new PIXI.Application({
@@ -302,6 +310,25 @@ export class Client extends EventEmitter
         // Begin the game
         game.begin();
 
+        // Run the initial events
+        for (const event of init)
+        {
+            switch (event.event)
+            {
+                case 'play':
+                {
+                    let step = game.play(event.args[0])!;
+                    while (step()) {}
+                    break;
+                }
+                case 'reveal': game.reveal(event.args[0]); break;
+            }
+        }
+
+        // Enable interaction
+        interactive = true;
+        setTurn(game.currentPlayer);
+
         // Listen for events from the server
         if (!this.isLocalGame())
         {
@@ -321,9 +348,6 @@ export class Client extends EventEmitter
             {
                 //game.removePlayer(playerId);
             });
-            
-            // Notify the server that this client is ready to receive messages
-            socket.emit('ready');
         }
 
         // Listen for window resizes

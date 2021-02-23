@@ -212,6 +212,7 @@ module.exports = function(http: Server)
             if (room.game)
             {
                 let game = room.game;
+
                 // Generate the log
                 let names: string[] = [];
                 for (const player of room.players)
@@ -221,34 +222,28 @@ module.exports = function(http: Server)
                 let log = new GameLog(names, game.rules, room.log);
 
                 let playerId = (playerKeyIn && playerKeyIn.length === keyLength) ? room.getPlayerIdFromKey(playerKeyIn) : -1;
-                if (playerId < 0)
+                if (playerId >= 0)
                 {
-                    // Return the log for debugging
-                    socket.emit('log', log);
-                    return;
-                }
+                    room.players[playerId].socket = socket;
 
-                // Replay the game messages for the rejoined player
-                let player = room.players[playerId];
-                player.socket = socket;
-                socket.emit('join', key, playerKeyIn, names.slice(0, playerId));
-                for (let i = playerId + 1; i < room.players.length; i++)
-                {
-                    socket.emit('addPlayer', room.players[i].name);
-                }
-                socket.emit('start', game.rules);
-                socket.on('ready', () =>
-                {
-                    // Notify the player of cards in their hand
-                    for (const cardId of game.players[])
-
-                    // Notify the player of all events preceding the current turn
-                    for (const event of log.events)
+                    // Join the player to the room
+                    socket.emit('join', key, playerKeyIn, names.slice(0, playerId + 1));
+                    for (let i = playerId + 1; i < room.players.length; i++)
                     {
-                        socket.emit(event.event, ...event.args);
+                        socket.emit('addPlayer', room.players[i].name);
                     }
-                });
 
+                    // Append the player's private information to the log
+                    let events: GameEvent[] = [];
+                    for (const cardId of game.players[playerId].hand)
+                    {
+                        events.push(new GameEvent('reveal', [new Reveal(cardId, game.shuffle[cardId])]));
+                    }
+                    log.events = [...events, ...log.events];
+                }
+
+                // Re-joining players can use the log contents to reconstruct the current game state
+                socket.emit('log', log);
                 return;
             }
 
@@ -258,14 +253,6 @@ module.exports = function(http: Server)
                 socket.emit('error');
                 return;
             }
-
-            // Notify the other players in the room and collect their names
-            let playerNames: string[] = [];
-            room.broadcast((socket: Socket, playerName: string) =>
-            {
-                socket.emit('addPlayer', name);
-                playerNames.push(playerName);
-            });
 
             // Generate a key for the new player
             let playerKey: string | undefined;
@@ -284,9 +271,20 @@ module.exports = function(http: Server)
                 return;
             }
 
-            // Send the joining player confirmation and the other players' names
-            socket.emit('join', key, playerKey, playerNames);
+            // Notify the other players in the room and collect their names
+            let playerNames: string[] = [];
+            room.broadcast((socket: Socket, playerName: string) =>
+            {
+                socket.emit('addPlayer', name);
+                playerNames.push(playerName);
+            });
+
+            // Add the player to the room
             room.players.push(new Player(name, playerKey, socket));
+
+            // Send the joining player confirmation and the other players' names
+            playerNames.push(name);
+            socket.emit('join', key, playerKey, playerNames);
 
             // Listen for game start
             socket.on('start', (rulesIn: Rules) =>
@@ -316,8 +314,12 @@ module.exports = function(http: Server)
                     return;
                 }
 
-                // Close the room to new entrants/starts
-                room.broadcast((socket: Socket) => socket.removeAllListeners('start'));
+                // Stop listening for lobby messages
+                room.broadcast((socket: Socket) => 
+                {
+                    socket.removeAllListeners('start');
+                    socket.removeAllListeners('join');
+                });
 
                 //
                 // Create the game and listen for its events
@@ -338,22 +340,8 @@ module.exports = function(http: Server)
                 {
                     room.reveals.push({cardId:cardId, deckId:game.shuffle[cardId]});
                 });
-            });
 
-            socket.on('ready', () =>
-            {
-                if (!room.game)
-                {
-                    console.log(key + ':' + room.getPlayerId(socket) + ' ready error');
-                    return;
-                }
-                console.log(key + ':' + room.getPlayerId(socket) + ' ready');
-                room.ready++;
-                if (room.ready === room.players.length)
-                {
-                    room.game.begin();
-                    room.broadcastMessage('ready');
-                }
+                game.begin();
             });
         });
     });

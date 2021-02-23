@@ -109,13 +109,15 @@ $(function()
         });
     }
 
-    function startGame(playerNames: string[], localPlayerId: number, rules: Rules)
+    function startGame(playerNames: string[], localPlayerId: number, rules: Rules, init: GameEvent[] = [])
     {
         $('#lobby').hide();
         $('#rulesForm').hide();
         $('#playerList').empty();
 
-        new Client(socket, playerNames, localPlayerId, rules);
+        // Stop listening on the socket, client will take it over
+        socket.removeAllListeners();
+        new Client(socket, playerNames, localPlayerId, rules, init);
     }
 
     function hideAll()
@@ -139,16 +141,15 @@ $(function()
 
         $('#lobby').show();
         key = gameKey;
-        localPlayerId = players.length;
+        localPlayerId = players.length - 1;
         lobbyPlayers = [];
         let url = window.location.origin + window.location.pathname + '?' + key;
         $('#gameUrl').html(url).attr('href', url);
-        for (let i = 0; i < players.length; i++)
+        for (const player of players)
         {
-            addPlayer(players[i]);
+            addPlayer(player);
         }
-        addPlayer('me'); // TODO playerName);
-        if (players.length === 0)
+        if (players.length === 1)
         {
             becomeHost();
         }
@@ -181,13 +182,19 @@ $(function()
 
     socket.on('log', (log: GameLog) =>
     {
-        let a = $('<a>');
-        a.attr('href', 'data:application/json;charset=UTF-8,' + JSON.stringify(log));
-        a.attr('download', 'gamelog_' + key + '.json');
-        a.text('Download log');
-        $('body').append(a);
-        a[0].click();
-        //a.trigger('click');
+        if (localPlayerId < 0)
+        {
+            // Download the game log for diagnostic use
+            let a = $('<a>');
+            a.attr('href', 'data:application/json;charset=UTF-8,' + JSON.stringify(log));
+            a.attr('download', 'gamelog_' + key + '.json');
+            a.text('Download log');
+            $('body').append(a);
+            a[0].click();
+            return;
+        }
+        
+        startGame(log.players, localPlayerId, log.rules, log.events);
     });
 
     // When the server rejects the join
@@ -199,12 +206,8 @@ $(function()
     });
 
     // When the game begins
-    // TODO - need to forbid inputs until ready.  can't send any game messages to the server until it tells us it's ready.
     socket.on('start', (rules: Rules) =>
     {
-        // Stop listening on the socket, client will take it over
-        socket.removeAllListeners();
-
         let playerNames: string[] = [];
         lobbyPlayers.forEach(player => playerNames.push(player.name));
         startGame(playerNames, localPlayerId, rules);
