@@ -263,6 +263,9 @@ $(function()
         // TODO - need to forbid inputs until ready.  can't send any game messages to the server until it tells us it's ready.
         socket.on('start', (rules: Rules) =>
         {
+            // Stop listening on the socket, client will take it over
+            socket.removeAllListeners();
+
             let playerNames: string[] = [];
             lobbyPlayers.forEach(player => playerNames.push(player.name));
             startGame(playerNames, localPlayerId, rules);
