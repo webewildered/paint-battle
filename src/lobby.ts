@@ -135,10 +135,11 @@ $(function()
     // When I enter the lobby
     socket.on('join', (gameKey: string, playerKey: string, players: string[]) =>
     {
-        // Save the keys for rejoin
-        Cookies.set(gameKeyCookie, gameKey, { expires: 7 });
-        Cookies.set(playerKeyCookie, playerKey, { expires: 7 });
-
+        if (key.length === 0)
+        {
+            history.pushState({}, 'Paint fight', '?' + gameKey);
+        }
+        
         $('#lobby').show();
         key = gameKey;
         localPlayerId = players.length - 1;
@@ -153,48 +154,60 @@ $(function()
         {
             becomeHost();
         }
-    });
 
-    // When another player enters the lobby
-    socket.on('addPlayer', (name: string) =>
-    {
-        addPlayer(name);
-    });
+        // When another player enters the lobby
+        socket.on('addPlayer', (name: string) =>
+        {
+            addPlayer(name);
+        });
 
-    // When another player leaves the lobby
-    socket.on('removePlayer', (id: number) =>
-    {
-        lobbyPlayers[id].li.remove();
-        lobbyPlayers.splice(id, 1);
-        if (id === 0)
+        // When another player leaves the lobby
+        socket.on('removePlayer', (id: number) =>
         {
-            lobbyPlayers[0].li.append(' (host)');
-        }
-        if (localPlayerId > id)
-        {
-            localPlayerId--;
-            if (localPlayerId === 0)
+            lobbyPlayers[id].li.remove();
+            lobbyPlayers.splice(id, 1);
+            if (id === 0)
             {
-                becomeHost();
+                lobbyPlayers[0].li.append(' (host)');
             }
-        }
-    });
+            if (localPlayerId > id)
+            {
+                localPlayerId--;
+                if (localPlayerId === 0)
+                {
+                    becomeHost();
+                }
+            }
+        });
 
-    socket.on('log', (log: GameLog) =>
-    {
-        if (localPlayerId < 0)
+        socket.on('log', (log: GameLog) =>
         {
-            // Download the game log for diagnostic use
-            let a = $('<a>');
-            a.attr('href', 'data:application/json;charset=UTF-8,' + JSON.stringify(log));
-            a.attr('download', 'gamelog_' + key + '.json');
-            a.text('Download log');
-            $('body').append(a);
-            a[0].click();
-            return;
-        }
-        
-        startGame(log.players, localPlayerId, log.rules, log.events);
+            if (localPlayerId < 0)
+            {
+                // Download the game log for diagnostic use
+                let a = $('<a>');
+                a.attr('href', 'data:application/json;charset=UTF-8,' + JSON.stringify(log));
+                a.attr('download', 'gamelog_' + key + '.json');
+                a.text('Download log');
+                $('body').append(a);
+                a[0].click();
+                return;
+            }
+            
+            startGame(log.players, localPlayerId, log.rules, log.events);
+        });
+
+        // When the game begins
+        socket.on('start', (rules: Rules) =>
+        {
+            // Save the keys for rejoin
+            Cookies.set(gameKeyCookie, gameKey, { expires: 7 });
+            Cookies.set(playerKeyCookie, playerKey, { expires: 7 });
+
+            let playerNames: string[] = [];
+            lobbyPlayers.forEach(player => playerNames.push(player.name));
+            startGame(playerNames, localPlayerId, rules);
+        });
     });
 
     // When the server rejects the join
@@ -203,14 +216,6 @@ $(function()
         let url = window.location.origin + window.location.pathname;
         $('#startUrl').attr('href', url);
         $('#error').show();
-    });
-
-    // When the game begins
-    socket.on('start', (rules: Rules) =>
-    {
-        let playerNames: string[] = [];
-        lobbyPlayers.forEach(player => playerNames.push(player.name));
-        startGame(playerNames, localPlayerId, rules);
     });
 
     //
@@ -295,7 +300,7 @@ $(function()
     $('#joinForm').show().on('submit', () =>
     {
         hideAll();
-        
+
         let playerName = $('#nameInput').val() as string;
 
         // Send first message to the server
