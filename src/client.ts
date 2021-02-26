@@ -461,8 +461,6 @@ export class Client extends EventEmitter
         switch (card.type)
         {
             // Single-click cards with no special visualization
-            case CardType.Circle:
-            case CardType.Box:
             case CardType.Eraser:
                 listener = (point: Point) =>
                 {
@@ -476,21 +474,42 @@ export class Client extends EventEmitter
                 };
                 break;
                 
+            case CardType.Circle:
+            case CardType.Box:
             case CardType.Poly:
+            {
+                this.beginPreview();
+                
+                let update = () =>
+                {
+                    this.overlayBoard.clear(this.previewPalette.length - 1);
+                    let point = this.getBoardPosition();
+                    let playPoint = this.getPlayPosition(point);
+                    if (playPoint)
+                    {
+                        this.immediateStep(game.draw(new Action(cardId, [playPoint]), this.overlayBoard));
+                    }
+                    this.updateOverlayBoard();
+                };
+                app.ticker.add(update);
+
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
                     if (playPoint)
                     {
                         this.off('boardClick', listener);
+                        app.ticker.remove(update);
                         playAction(new Action(cardId, [playPoint]));
-                        this.clearCursor();
+                        this.endPreview();
                     }
                 };
                 break;
+            }
 
             // Line - two clicks with line visualization after the first click
             case CardType.Line:
+            {
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
@@ -507,7 +526,8 @@ export class Client extends EventEmitter
                     {
                         let point2 = this.getBoardPosition();
                         this.overlayBoard.clear(this.previewPalette.length - 1);
-                        this.overlayBoard.drawLine(playPoint!, point2, (card as LineCard).pixels, 0);
+                        let p = (card as LineCard).pixels;
+                        this.immediateStep(game.draw(new Action(cardId, [playPoint!, point2]), this.overlayBoard));
                         this.updateOverlayBoard();
                     };
                     app.ticker.add(update);
@@ -524,9 +544,11 @@ export class Client extends EventEmitter
                     this.on('boardClick', listener);
                 };
                 break;
-            
+            }
+
             // Paint - two clicks with visualization after the first click
             case CardType.Paint:
+            {
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
@@ -590,9 +612,11 @@ export class Client extends EventEmitter
                     moveListener(playPoint);
                 };
                 break;
+            }
 
             // Grow - single click with visualization of the range that will be extended
             case CardType.Grow:
+            {
                 this.beginPreview();
 
                 // Update the visualization each frame to show the line to the current mouse position
@@ -619,9 +643,11 @@ export class Client extends EventEmitter
                     }
                 };
                 break;
+            }
                 
             // Dynamite: animated after click
             case CardType.Dynamite:
+            {
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
@@ -634,6 +660,7 @@ export class Client extends EventEmitter
                     }
                 };
                 break;
+            }
 
             default: throw new Error('Unknown card type');
         }
@@ -691,6 +718,11 @@ export class Client extends EventEmitter
             }
         };
         app.ticker.add(animate);
+    }
+
+    immediateStep(step: () => boolean)
+    {
+        while (step()) {};
     }
 
     getPlayPosition(point: Point): Point|undefined

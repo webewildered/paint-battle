@@ -35,6 +35,11 @@ export class Point
     lengthSquared() { return this.dot(this); }
     distanceSquared(point: Point) { return this.sub(point).lengthSquared(); }
 
+    greaterEqual(point: Point)
+    {
+        return this.x >= point.x && this.y >= point.y;
+    }
+
     equal(point: Point): boolean
     {
         return this.x === point.x && this.y === point.y;
@@ -73,10 +78,15 @@ export class Board
     size: Point;
     data: number[];
 
+    // Optimization for dijkstrafStep to avoid constant realloc and clear
+    dijkstraBuffer: ReusableBuffer;
+
     constructor(width: number, height: number)
     {
         this.size = new Point(width, height);
         this.data = new Array<number>(width * height);
+
+        this.dijkstraBuffer = new ReusableBuffer(this);
     }
 
     //
@@ -220,25 +230,13 @@ export class Board
             return true;
         };
     }
-
-    // Optimization for dijkstrafStep to avoid constant realloc and clear
-    dijkstraBuffer: Board | undefined;
     
     // Returns a function that will execute dijkstraf() in steps, increasing the maximum cost each time it is called by a
     // delta that you pass in (defaults to 1).  The step function returns false when it is complete.
     dijkstrafStep(start: Point, maxCost: number, f: (point: Point) => Node[])
     {
         // Buffer tracking whether each pixel has been visited.  0 = no, 1 = yes
-        let visited: Board;
-        if (this.dijkstraBuffer)
-        {
-            visited = this.dijkstraBuffer;
-            this.dijkstraBuffer = undefined;
-        }
-        else
-        {
-            visited = this.buffer(0);
-        }
+        let visited = this.dijkstraBuffer.take();
         
         // Visit pixels in cost order beginning from the start point
         let queue = new PriorityQueue({ comparator: function(a: Node, b: Node) { return b.cost - a.cost; }}); // lower cost -> higher priority
@@ -278,17 +276,7 @@ export class Board
             }
 
             // Clear the buffer and save it for possible reuse
-            if (!this.dijkstraBuffer)
-            {
-                for (let x = min.x; x <= max.x; x++)
-                {
-                    for (let y = min.y; y <= max.y; y++)
-                    {
-                        visited.set(new Point(x, y), 0);
-                    }
-                }
-                this.dijkstraBuffer = visited;
-            }
+            this.dijkstraBuffer.return(visited, min, max);
             
             return false;
         };
@@ -410,6 +398,20 @@ export class Board
     // Draw a regular polygon of color c inscribed in the circle centered at x, y with radius r, oriented with angle a
     drawPoly(center: Point, s: number, r: number, a: number, c: number)
     {
+        let poly = this.polyf(center, s, r, a);
+        this.circlef(center, r, (point: Point) =>
+        {
+            if (poly(point))
+            {
+                this.set(point, c);
+            }
+        });
+    }
+
+    // Returns a function that takes a point and returns true iff the point is inside the regular s-sided polygon
+    // insccribed in the circle at center with radius r, oriented with angle a
+    polyf(center: Point, s: number, r: number, a: number): (point: Point) => boolean
+    {
         // Point (u, v) is on the plane if au + bv + c = 0
         // Planes are the infinite lines that the edges of the polygon lie on
         let planes = new Array(s);
@@ -422,18 +424,18 @@ export class Board
             planes[i] = {a: cos, b: sin, c: -cos * center.x - center.y * sin - rInner};
         }
 
-        this.circlef(center, r, (point: Point) =>
+        return (point: Point) =>
         {
             for (let i = 0; i < s; i++)
             {
                 let plane = planes[i];
                 if (plane.a * point.x + plane.b * point.y + plane.c > 0)
                 {
-                    return;
+                    return false;
                 }
             }
-            this.set(point, c);
-        });
+            return true;
+        };
     }
     
     // Returns a stepping function that implements drawLine
@@ -779,5 +781,42 @@ export class Board
         }
 
         return buffer;
+    }
+}
+
+export class ReusableBuffer
+{
+    buffer: Board | undefined;
+
+    constructor(public board: Board) {}
+
+    // takeMask() returns a buffer cleared to 0 with dimensions matching this.board
+    // returnMask() takes a buffer with a dirty region and clears it to 0 for reuse
+    take(): Board
+    {
+        let buffer: Board;
+        if (this.buffer)
+        {
+            buffer = this.buffer;
+            this.buffer = undefined;
+        }
+        else
+        {
+            buffer = this.board.buffer(0);
+        }
+        return buffer;
+    }
+
+    return(buffer: Board, minDirty: Point, maxDirty: Point)
+    {
+        this.board.matchDimensions(buffer);
+        for (let x = minDirty.x; x <= maxDirty.x; x++)
+        {
+            for (let y = minDirty.y; y <= maxDirty.y; y++)
+            {
+                buffer.set(new Point(x, y), 0);
+            }
+        }
+        this.buffer = buffer;
     }
 }

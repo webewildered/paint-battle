@@ -1,4 +1,4 @@
-import { Point, PaintStep, PaintResult, Board } from './board';
+import { Point, PaintStep, ReusableBuffer, Board } from './board';
 import { EventEmitter } from 'events';
 
 export enum CardType
@@ -158,6 +158,9 @@ export class Game extends EventEmitter
     queue: Action[];
     numDisconnected: number;
     currentPlayer: number;
+    
+    // Temporary buffer for draw
+    drawBuffer: ReusableBuffer;
 
     constructor(numPlayers: number, shuffle: boolean, rules: Rules)
     {
@@ -172,6 +175,7 @@ export class Game extends EventEmitter
         // Initialize the game board
         this.board = new Board(this.size, this.size);
         this.board.clear(numPlayers);
+        this.drawBuffer = new ReusableBuffer(this.board);
 
         if (!(numPlayers >= 1 && numPlayers <= 6))
         {
@@ -292,6 +296,160 @@ export class Game extends EventEmitter
         return true;
     }
 
+    draw(action: Action, dest: Board): () => boolean
+    {
+        // Get the card data
+        let card = this.getCard(action.cardId);
+        if (!card)
+        {
+            throw new Error('Game.play() failed: card is invalid');
+        }
+
+        dest.matchDimensions(this.board);
+
+        let drawFlood = (start: Point, testColor: number, setColor: number, f: (point: Point) => boolean) => dest.floodfStep(start, (point: Point) =>
+        {
+            if (this.isOpen(point, testColor) && f(point))
+            {
+                dest.set(point, setColor);
+                return true;
+            }
+            return false;
+        });
+
+        // Perform the right action for the card
+        let color = this.currentPlayer;
+        switch (card.type)
+        {
+            case CardType.Circle:
+            case CardType.Eraser:
+            {
+                if (action.points.length !== 1 || !this.startOk(action.points[0]))
+                {
+                    throw new Error('Game.play() failed: points are invalid');
+                }
+                
+                let setColor = (card.type === CardType.Circle) ? color : this.players.length;
+                const radiusSquared = card.radius * card.radius;
+                let start = action.points[0];
+                return drawFlood(start, color, setColor, (point: Point) => point.distanceSquared(start) <= radiusSquared);
+            }
+            case CardType.Box:
+            {
+                if (action.points.length !== 1 || !this.startOk(action.points[0]))
+                {
+                    throw new Error('Game.play() failed: points are invalid');
+                }
+                let boxCard = card as BoxCard;
+                let start = action.points[0];
+                let halfExtents = new Point(boxCard.width, boxCard.height).floor().sub(new Point(1)).mul(new Point(0.5));
+                let min = start.sub(halfExtents).max(new Point(0));
+                let max = start.add(halfExtents).min(new Point(dest.width - 1, dest.height - 1));
+                return drawFlood(start, color, color, (point: Point) => point.greaterEqual(min) && max.greaterEqual(point));
+            }
+            case CardType.Poly:
+            {
+                if (action.points.length !== 1 || !this.startOk(action.points[0]))
+                {
+                    throw new Error('Game.play() failed: points are invalid');
+                }
+                let polyCard = card as PolyCard;
+                let start = action.points[0];
+                let polyTest = dest.polyf(start, polyCard.sides, polyCard.radius, polyCard.angle);
+                return drawFlood(start, color, color, polyTest);
+            }
+            case CardType.Line:
+            {
+                if (action.points.length !== 2 || !this.startOk(action.points[0]))
+                {
+                    throw new Error('Game.play() failed: points are invalid');
+                }
+
+                const clamp = false;
+                const single = false;
+                let p = (card as LineCard).pixels;
+                let lineStep = dest.linefStep(action.points[0], action.points[1], clamp, single, (point: Point) => 
+                {
+                    if (!this.isOpen(point, color))
+                    {
+                        return false;
+                    }
+                    dest.set(point, color);
+                    return --p > 0;
+                });
+                return () => lineStep(10);
+            }
+            case CardType.Paint:
+            {
+                let paintCard = card as PaintCard;
+                if (action.points.length === 0 || action.points.length > paintCard.pixels || !this.startOk(action.points[0]))
+                {
+                    throw new Error('Game.play() failed: points are invalid');
+                }
+                
+                let pixels = paintCard.pixels; // Number of pixels left
+                let i = 0; // Current index in action.points
+                let paintPoint = action.points[0]; // position to draw from
+                let paintBoard = dest.buffer(this.players.length); // Temporary board where the paint is accumulated
+                let paintStep: PaintStep | undefined = undefined;
+                return () =>
+                {
+                    for (let k = 0; k < 5; k++) // 5 steps
+                    {
+                        // Call paintStep() to get a function will execute segment i of the paint
+                        if (!paintStep)
+                        {
+                            if (i === action.points.length)
+                            {
+                                break;
+                            }
+                            if (pixels <= 0)
+                            {
+                                throw new Error('Game.play() failed'); // too many points
+                            }
+                            let nextPoint = action.points[i++];
+                            paintStep = paintBoard.paintfStep(paintPoint, nextPoint, paintCard.radius, pixels, color, (point: Point) => this.isOpen(point, color));
+                        }
+
+                        // Execute one step of the paint
+                        let result = paintStep(1);
+                        if (result)
+                        {
+                            // If the segment is done, update the pixel count and mark paintStep undefined to move to the next segment
+                            paintStep = undefined;
+                            pixels = Math.min(result.pixels, pixels - 1);
+                            paintPoint = result.point;
+                        }
+                    }
+
+                    dest.add(paintBoard, color);
+                    return (!!paintStep || i < action.points.length);
+                };
+            }
+            case CardType.Grow:
+            {
+                if (!this.startOk(action.points[0]))
+                {
+                    throw new Error('Game.play() failed');
+                }
+                
+                let growStep = dest.growfStep(action.points[0], (card as GrowCard).radius, color, (point: Point) => this.isOpen(point, color));
+                return () => growStep(1);
+                break;
+            }
+            case CardType.Dynamite:
+            {
+                if (!this.startOk(action.points[0]))
+                {
+                    throw new Error('Game.play() failed');
+                }
+                return dest.dynamiteStep(action.points[0], (card as DynamiteCard).radius, this.players.length);
+            }
+            default:
+                throw new Error('Game.play() failed: card type is invalid'); // should never happen even if an invalid message is received
+        }
+    };
+
     // returns a stepping function. The function must be called repeatedly to step the game
     // as long as it returns true. Once it returns false, the play is complete.
     // throws on failure -- this should not happen but might if there is a bug or if a player
@@ -346,175 +504,17 @@ export class Game extends EventEmitter
             this.reveal(reveal);
         }
 
-        // Get the card data
-        let card = this.getCard(action.cardId);
-        if (!card)
-        {
-            throw new Error('Game.play() failed: card is invalid');
-        }
-
-        // Returns a stepping function that flood fills the board from x, y with color c, restricted to
-        // pixels that are set to 1 in the mask and that are set to either c or this.players.length on the board
-        let floodMaskStep = (mask: Board, start: Point, c: number) => mask.floodfStep(action.points[0], (point: Point) =>
-        {
-            if (mask.get(point) === 1 && this.isOpen(point, c))
-            {
-                this.board.set(point, c);
-                return true;
-            }
-            return false;
-        });
-
-        // Perform the right action for the card
-        let step: () => boolean;
-        let c = this.currentPlayer;
-        switch (card.type)
-        {
-            case CardType.Circle:
-            case CardType.Eraser:
-            {
-                if (action.points.length !== 1 || !this.startOk(action.points[0]))
-                {
-                    throw new Error('Game.play() failed: points are invalid');
-                }
-                
-                let color = (card.type === CardType.Circle) ? c : this.players.length;
-                let mask = this.board.buffer(0);
-                mask.drawCircle(action.points[0], card.radius, 1);
-                step = floodMaskStep(mask, action.points[0], color);
-                break;
-            }
-            case CardType.Box:
-            {
-                if (action.points.length !== 1 || !this.startOk(action.points[0]))
-                {
-                    throw new Error('Game.play() failed: points are invalid');
-                }
-                let mask = this.board.buffer(0);
-                let boxCard = card as BoxCard;
-                mask.drawBox(action.points[0], boxCard.width, boxCard.height, 1);
-                step = floodMaskStep(mask, action.points[0], c);
-                break;
-            }
-            case CardType.Poly:
-            {
-                if (action.points.length !== 1 || !this.startOk(action.points[0]))
-                {
-                    throw new Error('Game.play() failed: points are invalid');
-                }
-                let mask = this.board.buffer(0);
-                let polyCard = card as PolyCard;
-                mask.drawPoly(action.points[0], polyCard.sides, polyCard.radius, polyCard.angle, 1);
-                step = floodMaskStep(mask, action.points[0], c);
-                break;
-            }
-            case CardType.Line:
-            {
-                if (action.points.length !== 2 || !this.startOk(action.points[0]))
-                {
-                    throw new Error('Game.play() failed: points are invalid');
-                }
-
-                const clamp = false;
-                const single = false;
-                let p = (card as LineCard).pixels;
-                let lineStep = this.board.linefStep(action.points[0], action.points[1], clamp, single, (point: Point) => 
-                {
-                    if (!this.isOpen(point, c))
-                    {
-                        return false;
-                    }
-                    this.board.set(point, c);
-                    return --p > 0;
-                });
-                step = () =>
-                {
-                    return lineStep(10);
-                };
-                break;
-            }
-            case CardType.Paint:
-            {
-                let paintCard = card as PaintCard;
-                if (action.points.length === 0 || action.points.length > paintCard.pixels || !this.startOk(action.points[0]))
-                {
-                    throw new Error('Game.play() failed: points are invalid');
-                }
-                
-                let pixels = paintCard.pixels; // Number of pixels left
-                let i = 0; // Current index in action.points
-                let paintPoint = action.points[0]; // position to draw from
-                let paintBoard = this.board.buffer(this.players.length); // Temporary board where the paint is accumulated
-                let paintStep: PaintStep | undefined = undefined;
-                step = () =>
-                {
-                    for (let k = 0; k < 5; k++) // 5 steps
-                    {
-                        // Call paintStep() to get a function will execute segment i of the paint
-                        if (!paintStep)
-                        {
-                            if (i === action.points.length)
-                            {
-                                break;
-                            }
-                            if (pixels <= 0)
-                            {
-                                throw new Error('Game.play() failed'); // too many points
-                            }
-                            let nextPoint = action.points[i++];
-                            paintStep = paintBoard.paintfStep(paintPoint, nextPoint, paintCard.radius, pixels, c, (point: Point) => this.isOpen(point, c));
-                        }
-
-                        // Execute one step of the paint
-                        let result = paintStep(1);
-                        if (result)
-                        {
-                            // If the segment is done, update the pixel count and mark paintStep undefined to move to the next segment
-                            paintStep = undefined;
-                            pixels = Math.min(result.pixels, pixels - 1);
-                            paintPoint = result.point;
-                        }
-                    }
-
-                    this.board.add(paintBoard, c);
-                    return (!!paintStep || i < action.points.length);
-                };
-                break;
-            }
-            case CardType.Grow:
-            {
-                if (!this.startOk(action.points[0]))
-                {
-                    throw new Error('Game.play() failed');
-                }
-                
-                let growStep = this.board.growfStep(action.points[0], (card as GrowCard).radius, c, (point: Point) => this.isOpen(point, c));
-                step = () =>
-                {
-                    return growStep(1);
-                };
-                break;
-            }
-            case CardType.Dynamite:
-            {
-                if (!this.startOk(action.points[0]))
-                {
-                    throw new Error('Game.play() failed');
-                }
-                step = this.board.dynamiteStep(action.points[0], (card as DynamiteCard).radius, this.players.length);
-                break;
-            }
-            default:
-                throw new Error('Game.play() failed: card type is invalid'); // should never happen even if an invalid message is received
-        }
+        // Make a stepping function that draws the action to the game board
+        // This does validation and might throw in case of bad input
+        let step = this.draw(action, this.board);
 
         // Reveal the card played
         this.emit('reveal', action.cardId);
             
         // Remove the card from the player's hand
-        let player = this.players[c];
+        let player = this.players[this.currentPlayer];
         player.hand.splice(player.hand.indexOf(action.cardId), 1);
-        this.emit('play', c, action.cardId);
+        this.emit('play', this.currentPlayer, action.cardId);
 
         // Return a stepper that steps the play until finished, then advances the game
         return () =>

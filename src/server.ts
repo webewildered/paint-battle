@@ -232,6 +232,7 @@ module.exports = function(http: Server)
                         return;
                     };
 
+                    console.log(key + ':' + playerId + ' rejoin');
                     player.socket = socket;
 
                     // Join the player to the room
