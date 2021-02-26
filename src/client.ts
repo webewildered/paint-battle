@@ -492,6 +492,12 @@ export class Client extends EventEmitter
                     this.updateOverlayBoard();
                 };
                 app.ticker.add(update);
+                
+                onCancel = () =>
+                {
+                    this.off('boardClick', listener);
+                    app.ticker.remove(update);
+                };
 
                 listener = (point: Point) =>
                 {
@@ -630,6 +636,12 @@ export class Client extends EventEmitter
                 };
                 app.ticker.add(update);
                 
+                onCancel = () =>
+                {
+                    this.off('boardClick', listener);
+                    app.ticker.remove(update);
+                };
+                
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
@@ -669,6 +681,7 @@ export class Client extends EventEmitter
         this.on('cancel', () =>
         {
             onCancel();
+            this.endPreview();
             this.status.text = 'Your turn - play a card!';
             this.players[game.currentPlayer].setEnabled(true);
             this.cancel.visible = false;
