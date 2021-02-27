@@ -746,38 +746,27 @@ export class Board
     // scale: positive integer pixel multiplier
     // palette: map values in this to [r, g, b, a].
     // buffer: UInt8Array.  r(0, 0), g(0, 0), b(0, 0), a(0, 0), r(1, 0), ..., a(width - 1, 0), r(0, 1), ...
-    render(scale: number, palette: number[][], buffer: Uint8ClampedArray|undefined = undefined)
+    render(palette: number[][], buffer: Uint8ClampedArray|undefined = undefined)
     {
         if (!buffer)
         {
-            buffer = new Uint8ClampedArray(this.bufferSize(scale));
+            buffer = new Uint8ClampedArray(this.bufferSize(1));
         }
-        else if (buffer.length !== this.bufferSize(scale))
+        else if (buffer.length !== this.bufferSize(1))
         {
             throw new Error('Incorrect buffer size');
         }
 
-        const pixel = 4;
-        let pitch = this.width * pixel * scale;
-        for (let i = 0; i < this.width; i++)
-        {
-            for (let j = 0; j < this.height; j++)
-            {
-                let color = palette[this.get(new Point(i, j))??0];
-                let k = j * pitch * scale + i * pixel * scale;
-                for (let u = 0; u < scale; u++)
-                {
-                    for (let v = 0; v < scale; v++)
-                    {
-                        let l = k + pixel * v;
-                        buffer[l] = color[0];
-                        buffer[l + 1] = color[1];
-                        buffer[l + 2] = color[2];
-                        buffer[l + 3] = color[3];
-                    }
-                    k += pitch;
-                }
-            }
+        const size = this.width * this.height;
+        let j = 0; // index into buffer
+        for (let i = 0; i < size; i++)
+        { 
+            let color = palette[this.data[i]];
+            buffer[j] = color[0];
+            buffer[j + 1] = color[1];
+            buffer[j + 2] = color[2];
+            buffer[j + 3] = color[3];
+            j += 4;
         }
 
         return buffer;

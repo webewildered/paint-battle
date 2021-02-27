@@ -5,12 +5,12 @@ $(function()
     // Render a board to a PIXI texture
     function rtt(board: Board, scale: number, palette: number[][], buffer: Uint8ClampedArray|undefined = undefined)
     {
-        buffer = board.render(scale, palette, buffer);
-        let imageData = new ImageData(buffer, scale * board.width);
+        buffer = board.render(palette, buffer);
+        let imageData = new ImageData(buffer, board.width);
         
         let canvas = document.createElement('canvas');
-        canvas.width = scale * board.width;
-        canvas.height = scale * board.height;
+        canvas.width = board.width;
+        canvas.height = board.height;
         let ctx = canvas.getContext("2d");
         if (!ctx)
         {
