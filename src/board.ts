@@ -656,7 +656,7 @@ export class Board
     // Sets every pixel to c.
     clear(c: number)
     {
-        this.allf((i) => { this.data[i] = c; });
+        this.data.fill(c);
     }
 
     // Copies src into this.  Src must have the same dimensions as this.
