@@ -136,7 +136,7 @@ export class Action
 
 class Player
 {
-    constructor(public hand: number[] = [], public disconnected: boolean = false) {}
+    constructor(public hand: number[] = [], public disconnected: boolean = false, public pixels: number = 0) {}
 }
 
 //
@@ -570,6 +570,12 @@ export class Game extends EventEmitter
                 break;
             }
         }
+        
+        let count = this.board.count(this.players.length + 1);
+        for (let i = 0; i < this.players.length; i++)
+        {
+            this.players[i].pixels = count[i];
+        }
     }
 
     private coordsOk(point: Point)
@@ -579,6 +585,6 @@ export class Game extends EventEmitter
 
     startOk(point: Point)
     {
-        return (this.board.get(point) === this.currentPlayer || this.board.count(this.players.length + 1)[this.currentPlayer] === 0);
+        return (this.board.get(point) === this.currentPlayer || this.players[this.currentPlayer].pixels === 0);
     }
 }

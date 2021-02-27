@@ -17,7 +17,16 @@
         {
             "type": "chrome",
             "request": "launch",
-            "name": "Client",
+            "name": "Client (Chrome)",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}",
+            "preLaunchTask": "webpack",
+            //"runtimeArgs": ["--disable-3d-apis"]
+        },
+        {
+            "type": "firefox",
+            "request": "launch",
+            "name": "Client (Firefox)",
             "url": "http://localhost:3000",
             "webRoot": "${workspaceFolder}",
             "preLaunchTask": "webpack",

@@ -39,7 +39,7 @@ function rtt(board: Board, scale: number, palette: number[][], buffer: Uint8Clam
 {
     buffer = board.render(scale, palette, buffer);
     let imageData = new ImageData(buffer, scale * board.width);
-    
+
     let canvas = document.createElement('canvas');
     canvas.width = scale * board.width;
     canvas.height = scale * board.height;
