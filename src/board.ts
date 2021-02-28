@@ -231,6 +231,11 @@ export class Board
         };
     }
     
+    linef(start: Point, end: Point, clamp: boolean, single: boolean, f: (point: Point) => any)
+    {
+        this.linefStep(start, end, clamp, single, f)(Infinity);
+    }
+    
     // Returns a function that will execute dijkstraf() in steps, increasing the maximum cost each time it is called by a
     // delta that you pass in (defaults to 1).  The step function returns false when it is complete.
     dijkstrafStep(start: Point, maxCost: number, f: (point: Point) => Node[])
