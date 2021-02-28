@@ -3,6 +3,7 @@ import { CardType, Card, BoxCard, PolyCard, LineCard, PaintCard, Rules, Action, 
 import { Point, Board } from './board';
 import { GameEvent } from './protocol';
 const EventEmitter = require('events');
+const Color = require('color');
 
 // Constants
 const colors = [ // Player colors
@@ -219,14 +220,18 @@ export class Client extends EventEmitter
             return [Math.floor(color / 0x1000000), Math.floor(color / 0x10000) & 0xff, Math.floor(color / 0x100) & 0xff, color & 0xff];
         }
         this.palette = new Array(numPlayers + 1);
-        this.previewPalette = new Array(this.palette.length);
+        this.previewPalette = new Array(this.palette.length + 1);
         for (let i = 0; i < numPlayers; i++)
         {
             this.palette[i] = rgba(colors[i]);
-            this.previewPalette[i] = rgba(0xaaaaaaff);
+            let c = Color.rgb(this.palette[i].slice(0, 3));
+            let pc = c.lighten(0.5).rgb();
+            this.previewPalette[i] = [...pc.array(), 0xff];
+            //this.previewPalette[i] = rgba(0xaaaaaaff);
         }
         this.palette[numPlayers] = rgba(colors[colors.length - 1]);
         this.previewPalette[numPlayers] = rgba(0);
+        this.previewPalette[numPlayers + 1] = rgba(0xaaaaaaff);
 
         //
         // Board display
@@ -498,7 +503,7 @@ export class Client extends EventEmitter
                     if (!point.equal(lastPoint))
                     {
                         lastPoint = point;
-                        this.overlayBoard.clear(this.previewPalette.length - 1);
+                        this.overlayBoard.clear(this.players.length);
                         let playPoint = this.getPlayPosition(point);
                         if (playPoint)
                         {
@@ -551,7 +556,7 @@ export class Client extends EventEmitter
                         if (!point2.equal(lastPoint))
                         {
                             lastPoint = point2;
-                            this.overlayBoard.clear(this.previewPalette.length - 1);
+                            this.overlayBoard.clear(this.players.length);
                             let p = (card as LineCard).pixels;
                             this.immediateStep(game.draw(new Action(cardId, [playPoint!, point2]), this.overlayBoard));
                             this.updateOverlayBoard();
@@ -626,7 +631,7 @@ export class Client extends EventEmitter
                         this.off('boardClick', listener);
 
                         // Clear the preview
-                        this.overlayBoard.clear(this.previewPalette.length - 1);
+                        this.overlayBoard.clear(this.players.length);
                         this.updateOverlayBoard();
                 
                         playAction(new Action(cardId, paintPoints));
@@ -656,7 +661,7 @@ export class Client extends EventEmitter
                         lastPoint = point;
                         let floodBoard = this.overlayBoard.buffer(this.palette.length - 1);
                         floodBoard.drawFlood(game.board, point, game.currentPlayer);
-                        this.overlayBoard.outline(game.currentPlayer, 0, this.previewPalette.length - 1, floodBoard);
+                        this.overlayBoard.outline(game.currentPlayer, game.currentPlayer, this.players.length, floodBoard);
                         this.updateOverlayBoard();
                     }
                 };
@@ -822,17 +827,17 @@ export class Client extends EventEmitter
 
         // Create a crosshair cursor
         let cursorBoard = new Board(crossSize, crossSize);
-        cursorBoard.clear(this.previewPalette.length - 1);
-        cursorBoard.drawCross(new Point(Math.floor(cursorBoard.width / 2), Math.floor(cursorBoard.height / 2)), crossRadius, 0);
+        cursorBoard.clear(this.players.length);
+        cursorBoard.drawCross(new Point(Math.floor(cursorBoard.width / 2), Math.floor(cursorBoard.height / 2)), crossRadius, this.players.length + 1);
         this.cursor = new PIXI.Sprite(rtt(cursorBoard, this.previewPalette));
         this.boardSprite.addChild(this.cursor);
 
-        // Draw the card's shape to a board.  (This will return an empty board if there is no shape).
-        let shapeBoard = renderCard(card, 0, this.previewPalette.length - 1, crossSize);
+        // Draw the card's shape to a board. 0 is shape, 1 is empty. (This will return an empty board if there is no shape).
+        let shapeBoard = renderCard(card, 0, 1, crossSize);
 
         // Take the outline of the shape
-        let previewBoard = new Board(shapeBoard.width, shapeBoard.height);
-        previewBoard.outline(0, 0, this.previewPalette.length - 1, shapeBoard);
+        let previewBoard = shapeBoard.buffer();
+        previewBoard.outline(0, game.currentPlayer, this.players.length, shapeBoard);
         this.previewCursor = new PIXI.Sprite(rtt(previewBoard, this.previewPalette));
         this.boardSprite.addChild(this.previewCursor);
 
