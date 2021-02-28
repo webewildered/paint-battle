@@ -224,15 +224,10 @@ module.exports = function(http: Server)
                 let playerId = (playerKeyIn && playerKeyIn.length === keyLength) ? room.getPlayerIdFromKey(playerKeyIn) : -1;
                 if (playerId >= 0)
                 {
-                    const player = room.players[playerId];
-                    if (player.socket.connected)
-                    {
-                        console.log(key + ':' + playerId + ' rejoined while already connected');
-                        socket.emit('error');
-                        return;
-                    };
-
                     console.log(key + ':' + playerId + ' rejoin');
+                    const player = room.players[playerId];
+                    player.socket.removeAllListeners();
+                    player.socket.disconnect(true);
                     player.socket = socket;
 
                     // Join the player to the room

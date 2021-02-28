@@ -353,6 +353,15 @@ export class Client extends EventEmitter
             {
                 //game.removePlayer(playerId);
             });
+
+            socket.on('disconnect', () =>
+            {
+                app.stage.removeChildren();
+                let dcText = new PIXI.Text('Disconnected', {fontFamily : 'Arial', fontSize: 24, fill : 0x000000});
+                dcText.x = (app.view.width - dcText.width) / 2;
+                dcText.y = (app.view.height - dcText.height) / 2;
+                app.stage.addChild(dcText);
+            });
         }
 
         // Listen for window resizes

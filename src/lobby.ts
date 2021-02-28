@@ -137,7 +137,19 @@ $(function()
     {
         if (key.length === 0)
         {
-            history.pushState({}, 'Paint fight', '?' + gameKey);
+            const state = 'jt%^?Vc+R9C5&"qQ';
+            window.addEventListener('popstate', (event: any) =>
+            {
+                // Make the browser reload the page
+                if (event.state === state)
+                {
+                    // TODO - this destroys the history, so if you go back and then forward again,
+                    // popstate won't fire on forward
+                    location.reload();
+                }
+            });
+            history.replaceState(state, '');
+            history.pushState(state, '', '?' + gameKey);
         }
         
         $('#lobby').show();
@@ -160,7 +172,7 @@ $(function()
         {
             addPlayer(name);
         });
-
+    
         // When another player leaves the lobby
         socket.on('removePlayer', (id: number) =>
         {
@@ -180,34 +192,34 @@ $(function()
             }
         });
 
-        socket.on('log', (log: GameLog) =>
-        {
-            if (localPlayerId < 0)
-            {
-                // Download the game log for diagnostic use
-                let a = $('<a>');
-                a.attr('href', 'data:application/json;charset=UTF-8,' + JSON.stringify(log));
-                a.attr('download', 'gamelog_' + key + '.json');
-                a.text('Download log');
-                $('body').append(a);
-                a[0].click();
-                return;
-            }
-            
-            startGame(log.players, localPlayerId, log.rules, log.events);
-        });
-
         // When the game begins
         socket.on('start', (rules: Rules) =>
         {
             // Save the keys for rejoin
             Cookies.set(gameKeyCookie, gameKey, { expires: 7 });
             Cookies.set(playerKeyCookie, playerKey, { expires: 7 });
-
+    
             let playerNames: string[] = [];
             lobbyPlayers.forEach(player => playerNames.push(player.name));
             startGame(playerNames, localPlayerId, rules);
         });
+    });
+
+    socket.on('log', (log: GameLog) =>
+    {
+        if (localPlayerId < 0)
+        {
+            // Download the game log for diagnostic use
+            let a = $('<a>');
+            a.attr('href', 'data:application/json;charset=UTF-8,' + JSON.stringify(log));
+            a.attr('download', 'gamelog_' + key + '.json');
+            a.text('Download log');
+            $('body').append(a);
+            a[0].click();
+            return;
+        }
+        
+        startGame(log.players, localPlayerId, log.rules, log.events);
     });
 
     // When the server rejects the join
