@@ -482,16 +482,21 @@ export class Client extends EventEmitter
             {
                 this.beginPreview();
                 
+                let lastPoint = new Point(-1);
                 let update = () =>
                 {
-                    this.overlayBoard.clear(this.previewPalette.length - 1);
                     let point = this.getBoardPosition();
-                    let playPoint = this.getPlayPosition(point);
-                    if (playPoint)
+                    if (!point.equal(lastPoint))
                     {
-                        this.immediateStep(game.draw(new Action(cardId, [playPoint]), this.overlayBoard));
+                        lastPoint = point;
+                        this.overlayBoard.clear(this.previewPalette.length - 1);
+                        let playPoint = this.getPlayPosition(point);
+                        if (playPoint)
+                        {
+                            this.immediateStep(game.draw(new Action(cardId, [playPoint]), this.overlayBoard));
+                        }
+                        this.updateOverlayBoard();
                     }
-                    this.updateOverlayBoard();
                 };
                 app.ticker.add(update);
                 
@@ -530,13 +535,18 @@ export class Client extends EventEmitter
                     this.beginPreview();
 
                     // Update the visualization each frame to show the line to the current mouse position
+                    let lastPoint = new Point(-1);
                     let update = () =>
                     {
                         let point2 = this.getBoardPosition();
-                        this.overlayBoard.clear(this.previewPalette.length - 1);
-                        let p = (card as LineCard).pixels;
-                        this.immediateStep(game.draw(new Action(cardId, [playPoint!, point2]), this.overlayBoard));
-                        this.updateOverlayBoard();
+                        if (!point2.equal(lastPoint))
+                        {
+                            lastPoint = point2;
+                            this.overlayBoard.clear(this.previewPalette.length - 1);
+                            let p = (card as LineCard).pixels;
+                            this.immediateStep(game.draw(new Action(cardId, [playPoint!, point2]), this.overlayBoard));
+                            this.updateOverlayBoard();
+                        }
                     };
                     app.ticker.add(update);
 
@@ -628,13 +638,18 @@ export class Client extends EventEmitter
                 this.beginPreview();
 
                 // Update the visualization each frame to show the line to the current mouse position
+                let lastPoint = new Point(-1);
                 let update = () =>
                 {
                     let point = this.getBoardPosition();
-                    let floodBoard = this.overlayBoard.buffer(this.palette.length - 1);
-                    floodBoard.drawFlood(game.board, point, game.currentPlayer);
-                    this.overlayBoard.outline(game.currentPlayer, 0, this.previewPalette.length - 1, floodBoard);
-                    this.updateOverlayBoard();
+                    if (!point.equal(lastPoint))
+                    {
+                        lastPoint = point;
+                        let floodBoard = this.overlayBoard.buffer(this.palette.length - 1);
+                        floodBoard.drawFlood(game.board, point, game.currentPlayer);
+                        this.overlayBoard.outline(game.currentPlayer, 0, this.previewPalette.length - 1, floodBoard);
+                        this.updateOverlayBoard();
+                    }
                 };
                 app.ticker.add(update);
                 
