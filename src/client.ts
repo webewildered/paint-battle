@@ -225,13 +225,13 @@ export class Client extends EventEmitter
         {
             this.palette[i] = rgba(colors[i]);
             let c = Color.rgb(this.palette[i].slice(0, 3));
-            let pc = c.lighten(0.5).rgb();
-            this.previewPalette[i] = [...pc.array(), 0xff];
+            let pc = c.lighten(0.7).rgb();
+            this.previewPalette[i] = [...pc.array(), 0xaa];
             //this.previewPalette[i] = rgba(0xaaaaaaff);
         }
         this.palette[numPlayers] = rgba(colors[colors.length - 1]);
         this.previewPalette[numPlayers] = rgba(0);
-        this.previewPalette[numPlayers + 1] = rgba(0xaaaaaaff);
+        this.previewPalette[numPlayers + 1] = rgba(0x222222ff);
 
         //
         // Board display
@@ -239,6 +239,7 @@ export class Client extends EventEmitter
 
         // Container for the board and everything tied to its position
         this.boardContainer = new PIXI.Container();
+        this.boardContainer.scale.set(this.scale, this.scale);
         app.stage.addChild(this.boardContainer);
 
         // Game board display
@@ -246,7 +247,6 @@ export class Client extends EventEmitter
         this.boardGraphics = new PIXI.Graphics();
         this.boardContainer.addChild(this.boardGraphics);
         this.boardSprite = new PIXI.Sprite();
-        this.boardSprite.scale.set(this.scale, this.scale);
         this.boardSprite.interactive = true;
         this.boardContainer.addChild(this.boardSprite);
 
@@ -254,7 +254,6 @@ export class Client extends EventEmitter
         this.overlayBuffer = new Uint8ClampedArray(game.board.bufferSize(1));
         this.overlayBoard = new Board(game.size, game.size);
         this.overlaySprite = new PIXI.Sprite();
-        this.overlaySprite.scale.set(this.scale, this.scale);
         this.overlaySprite.visible = false;
         this.boardContainer.addChild(this.overlaySprite);
 
@@ -825,13 +824,6 @@ export class Client extends EventEmitter
         const crossRadius = 3;
         const crossSize = 2 * crossRadius + 1;
 
-        // Create a crosshair cursor
-        let cursorBoard = new Board(crossSize, crossSize);
-        cursorBoard.clear(this.players.length);
-        cursorBoard.drawCross(new Point(Math.floor(cursorBoard.width / 2), Math.floor(cursorBoard.height / 2)), crossRadius, this.players.length + 1);
-        this.cursor = new PIXI.Sprite(rtt(cursorBoard, this.previewPalette));
-        this.boardSprite.addChild(this.cursor);
-
         // Draw the card's shape to a board. 0 is shape, 1 is empty. (This will return an empty board if there is no shape).
         let shapeBoard = renderCard(card, 0, 1, crossSize);
 
@@ -839,7 +831,14 @@ export class Client extends EventEmitter
         let previewBoard = shapeBoard.buffer();
         previewBoard.outline(0, game.currentPlayer, this.players.length, shapeBoard);
         this.previewCursor = new PIXI.Sprite(rtt(previewBoard, this.previewPalette));
-        this.boardSprite.addChild(this.previewCursor);
+        this.boardContainer.addChild(this.previewCursor);
+
+        // Create a crosshair cursor
+        let cursorBoard = new Board(crossSize, crossSize);
+        cursorBoard.clear(this.players.length);
+        cursorBoard.drawCross(new Point(Math.floor(cursorBoard.width / 2), Math.floor(cursorBoard.height / 2)), crossRadius, this.players.length + 1);
+        this.cursor = new PIXI.Sprite(rtt(cursorBoard, this.previewPalette));
+        this.boardContainer.addChild(this.cursor);
 
         this.updateCursor();
 
@@ -883,7 +882,7 @@ export class Client extends EventEmitter
     {
         if (this.cursor)
         {
-            this.boardSprite.removeChild(this.cursor);
+            this.boardContainer.removeChild(this.cursor);
             // @ts-ignore: destroy *does* accept boolean, see documentation
             this.cursor.destroy(true); 
             this.cursor = undefined;
