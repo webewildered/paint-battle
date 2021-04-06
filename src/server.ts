@@ -189,6 +189,7 @@ module.exports = function(http: Server)
                     action.reveals = []; // Client may not send the server reveals
                     step = game.play(action);
                     if (!step) { throw new Error('no step'); }
+                    while (step()) {} // Run the action to completion
                 }
                 catch (error)
                 {
@@ -198,9 +199,6 @@ module.exports = function(http: Server)
                     return;
                     // TODO -- then what, DC the player?
                 }
-
-                // Run the action to completion
-                while (step()) {}
 
                 // Forward the action to the other players
                 action.reveals = room.reveals;

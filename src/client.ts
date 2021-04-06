@@ -589,17 +589,31 @@ export class Client extends EventEmitter
                     this.off('boardClick', listener);
                     this.beginPreview();
 
-                    // Update the visualization on mouse move
+                    // Draw incrementally as the player moves the mouse
                     let paintPoints: Point[] = [];
                     let paintPixels = (card as PaintCard).pixels;
                     let last: Point = playPoint;
-                    let moveListener = (to: Point) =>
+                    let paintTo = (target: Point) =>
+                    {
+                        paintPoints.push(target);
+                        let result = this.overlayBoard.paintf(last, target, card.radius, paintPixels, game.currentPlayer, 
+                            (point: Point) => game.isOpen(point, game.currentPlayer));
+                        paintPixels = Math.min(result.pixels, paintPixels - 1);
+                        this.dirty = true;
+                        last = target;
+                    };
+
+                    // Draw the first point
+                    paintTo(playPoint);
+
+                    // Update the visualization on mouse move
+                    let moveListener = (target: Point) =>
                     {
                         if (!last)
                         {
-                            last = to;
+                            last = target;
                         }
-                        else if (to.x === last.x && to.y === last.y)
+                        else if (target.x === last.x && target.y === last.y)
                         {
                             return;
                         }
@@ -607,43 +621,44 @@ export class Client extends EventEmitter
                         let testLine = (point: Point) =>
                         {
                             let reachedPoint = false;
-                            this.overlayBoard.linef(point, to, true, false, (linePoint: Point) =>
+                            this.overlayBoard.linef(point, target, true, false, (linePoint: Point) =>
                             {
                                 if (!game.isOpen(linePoint, game.currentPlayer)) { return false; }
-                                reachedPoint = linePoint.equal(to); // TODO this breaks clamp, don't know if the line reached the clamped point
+                                reachedPoint = linePoint.equal(target); // TODO this breaks clamp, don't know if the line reached the clamped point
                                 return true;
                             });
                             return reachedPoint;
                         };
 
-                        // Search for a path from last to point
+                        // Search for a path from the last point
                         let found = false;
-                        this.overlayBoard.floodf(last, (point: Point) =>
+                        this.overlayBoard.floodf(last, (point: Point, getPath: () => Point[]) =>
                         {
-                            if (found || !game.isOpen(point, game.currentPlayer) || last.distanceSquared(point) > 1.001) // TODO single point path to start with
+                            const maxDistanceSq = 25; // Search within a 5px radius
+                            if (found || !game.isOpen(point, game.currentPlayer) || last.distanceSquared(point) > maxDistanceSq)
                             {
                                 return false;
                             }
 
                             if (testLine(point))
                             {
-                                if (!point.equal(last))
+                                found = true;
+                                let path = getPath();
+                                path.reverse();
+                                path.push(point); // path implicitly ends with point, we need to paint to there
+                                path.push(target); // after reaching the end of the path, straigh line to target
+                                for (const pathPoint of path)
                                 {
-                                    paintPoints.push(point);
-                                    let result = this.overlayBoard.paintf(last, point, card.radius, paintPixels, game.currentPlayer, 
-                                        (point: Point) => game.isOpen(point, game.currentPlayer));
-                                    paintPixels = Math.min(result.pixels, paintPixels - 1);
-                                    this.dirty = true;
+                                    if (pathPoint.equal(last))
+                                    {
+                                        continue;
+                                    }
+                                    paintTo(pathPoint);
+                                    if (paintPixels <= 0)
+                                    {
+                                        break;
+                                    }
                                 }
-                                if (paintPixels > 0 && !point.equal(to))
-                                {
-                                    paintPoints.push(to);
-                                    let result = this.overlayBoard.paintf(point, to, card.radius, paintPixels, game.currentPlayer, 
-                                        (point: Point) => game.isOpen(point, game.currentPlayer));
-                                    paintPixels = Math.min(result.pixels, paintPixels - 1);
-                                    this.dirty = true;
-                                }
-                                last = to;
                                 return false;
                             }
 
@@ -677,13 +692,6 @@ export class Client extends EventEmitter
                         this.endPreview();
                     };
                     this.on('boardClick', listener);
-
-                    // TODO wrap this in a function at least
-                    paintPoints.push(playPoint);
-                    let result = this.overlayBoard.paintf(playPoint, playPoint, card.radius, paintPixels, game.currentPlayer, 
-                        (point: Point) => game.isOpen(point, game.currentPlayer));
-                    paintPixels = Math.min(result.pixels, paintPixels - 1);
-                    this.dirty = true;
                 };
                 break;
             }

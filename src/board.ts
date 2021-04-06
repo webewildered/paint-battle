@@ -53,13 +53,10 @@ export class Point
 
 class Node extends Point
 {
-    constructor(point: Point, cost: number)
+    constructor(point: Point, public cost: number, public predecessor: number = -1)
     {
         super(point.x, point.y);
-        this.cost = cost;
     }
-    
-    cost: number;
 };
 
 export class PaintResult
@@ -99,6 +96,13 @@ export class Board
     getIndex(point: Point): number
     {
         return point.x + point.y * this.width;
+    }
+
+    getPoint(index: number): Point
+    {
+        let y = Math.floor(index / this.width);
+        let x = index - y * this.width;
+        return new Point(x, y);
     }
 
     get(point: Point): number|undefined
@@ -238,14 +242,15 @@ export class Board
     
     // Returns a function that will execute dijkstraf() in steps, increasing the maximum cost each time it is called by a
     // delta that you pass in (defaults to 1).  The step function returns false when it is complete.
-    dijkstrafStep(start: Point, maxCost: number, f: (point: Point) => Node[])
+    dijkstrafStep(start: Point, maxCost: number, f: (point: Point, path: () => Point[]) => Node[])
     {
-        // Buffer tracking whether each pixel has been visited.  0 = no, 1 = yes
+        // Buffer tracking visited pixels. -1 = unvisited, otherwise the value is the index of the previous pixel on the path,
+        // or in the case of the first pixel, its own index
         let visited = this.dijkstraBuffer.take();
         
         // Visit pixels in cost order beginning from the start point
         let queue = new PriorityQueue({ comparator: function(a: Node, b: Node) { return b.cost - a.cost; }}); // lower cost -> higher priority
-        queue.enqueue(new Node(start, 0));
+        queue.enqueue(new Node(start, 0, visited.getIndex(start)));
 
         // Track the bounding box of pixels visited
         let min: Point = start;
@@ -263,15 +268,31 @@ export class Board
                     return true;
                 }
                 let item = queue.dequeue() as Node;
-                if (visited.get(item) === 0)
+                if (visited.get(item)! < 0)
                 {
-                    visited.set(item, 1);
+                    visited.set(item, item.predecessor);
                     min = min.min(item);
                     max = max.max(item);
-                    let neighbors = f(item);
+                    const neighbors = f(item, () =>
+                    {
+                        let path = new Array<Point>();
+                        let index = visited.getIndex(item);
+                        while (true)
+                        {
+                            let predecessor = visited.data[index];
+                            path.push(visited.getPoint(predecessor));
+                            if (predecessor === index)
+                            {
+                                return path;
+                            }
+                            index = predecessor;
+                        }
+                    });
+                    const index = visited.getIndex(item);
                     for (const neighbor of neighbors)
                     {
                         neighbor.cost += item.cost;
+                        neighbor.predecessor = index;
                         if (neighbor.cost < maxCost)
                         {
                             queue.enqueue(neighbor);
@@ -288,21 +309,22 @@ export class Board
     }
 
     // Dijstra's algorithm.  Visits pixels starting from (x, y) in order by cost and calls f() at each one.
-    // f(u, v, addNeighbor) receives the coordinates of the visited pixel and a function addNeighbor(u, v, cost)
-    // which can be used to specify neighboring pixels and the cost to reach them from the current one.  f is
-    // never called more than once for the same pixel.
-    dijkstraf(start: Point, maxCost: number, f: (point: Point) => Node[])
+    // f(point, path) receives the coordinates of the visited pixel in point and can call path() to get an
+    // array containing the path from start to point, beginning with the first pixel before point and ending
+    // with start.  f returns a list of point's neighbors and the cost to reach them from point; the returned
+    // Nodes' predecessors are unused and do not need to be set.
+    dijkstraf(start: Point, maxCost: number, f: (point: Point, path: () => Point[]) => Node[])
     {
         this.dijkstrafStep(start, maxCost, f)(maxCost);
     }
 
     // Returns a function that will execute floodf() in steps.
     // Works the same as dijkstrafStep().
-    floodfStep(start: Point, f: (point: Point) => boolean)
+    floodfStep(start: Point, f: (point: Point, path: () => Point[]) => boolean)
     {
-        return this.dijkstrafStep(start, Infinity, (point: Point) =>
+        return this.dijkstrafStep(start, Infinity, (point: Point, path: () => Point[]) =>
         {
-            if (!f(point)) { return []; }
+            if (!f(point, path)) { return []; }
             return [
                 new Node(point.add(new Point(-1, 0)), 1),
                 new Node(point.add(new Point(1, 0)), 1),
@@ -314,7 +336,7 @@ export class Board
 
     // Flood fill - calls f(u, v) for every pixel reachable through a series of horizontal and vertical steps from (x, y) such that f returns true for every
     // other pixel on the path.  f() is never called more than once for the same pixel.
-    floodf(start: Point, f: (point: Point) => boolean)
+    floodf(start: Point, f: (point: Point, path: () => Point[]) => boolean)
     {
         this.floodfStep(start, f)(Infinity);
     }
@@ -784,7 +806,7 @@ export class ReusableBuffer
 
     constructor(public board: Board) {}
 
-    // takeMask() returns a buffer cleared to 0 with dimensions matching this.board
+    // takeMask() returns a buffer cleared to -1 with dimensions matching this.board
     // returnMask() takes a buffer with a dirty region and clears it to 0 for reuse
     take(): Board
     {
@@ -796,7 +818,7 @@ export class ReusableBuffer
         }
         else
         {
-            buffer = this.board.buffer(0);
+            buffer = this.board.buffer(-1);
         }
         return buffer;
     }
@@ -808,7 +830,7 @@ export class ReusableBuffer
         {
             for (let y = minDirty.y; y <= maxDirty.y; y++)
             {
-                buffer.set(new Point(x, y), 0);
+                buffer.set(new Point(x, y), -1);
             }
         }
         this.buffer = buffer;
