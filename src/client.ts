@@ -23,7 +23,6 @@ let cardPalette = [
 
 const cardWidth = 100;
 const cardHeight = 150;
-const playerHeight = cardHeight + 20;
 
 type Socket = SocketIOClient.Emitter;
 
@@ -34,6 +33,35 @@ let app: PIXI.Application;
 //
 // Global helpers
 //
+
+function decay(dt: number, rate: number): number
+{
+    return Math.exp(dt * Math.log(rate));
+}
+
+function decay1d(value: number, target: number, dt: number, rate: number = 0.9, floor: number = 0.1): number
+{
+    let diff = value - target;
+    let frac = decay(dt, rate);
+    diff *= frac;
+    if (Math.abs(diff) < floor)
+    {
+        return target;
+    }
+    return target + diff;
+}
+
+function decay2d(point: Point, target: Point, dt: number, rate: number = 0.9, floor: number = 0.1): Point
+{
+    let diff = point.sub(target);
+    let dist = diff.length();
+    let frac = decay(dt, rate);
+    if (dist * frac < floor)
+    {
+        return target.clone();
+    }
+    return target.add(diff.mul(new Point(frac)));
+}
 
 // Render a board to a PIXI texture
 function rtt(board: Board, palette: number[][], buffer: Uint8ClampedArray|undefined = undefined)
@@ -314,6 +342,8 @@ export class Client extends EventEmitter
             this.players[i] = new CPlayer(i, name, local);
         }
 
+        app.ticker.add(this.update, this);
+
         // Begin the game
         game.begin();
 
@@ -406,6 +436,16 @@ export class Client extends EventEmitter
     
     // Returns true if this game is run entirely in the client, with no server connection
     isLocalGame() { return (this.localPlayerId === -1); }
+    
+    update()
+    {
+        let y = 10;
+        for (const player of this.players)
+        {
+            player.container.y = y;
+            y += player.container.height + 10;
+        }
+    }
 
     layout()
     {
@@ -999,6 +1039,10 @@ class CPlayer
     delta: number; // Change in count from the previous action
     status: PIXI.Text;
     lastPlayed: string;
+    mouseOver: boolean;
+    scale: number = 1;
+    
+    static readonly margin = 10;
 
     constructor(id: number, name: string, local: boolean)
     {
@@ -1006,6 +1050,7 @@ class CPlayer
         this.cards = [];
         this.container = new PIXI.Container();
         this.local = local;
+        this.mouseOver = local;
         this.name = name;
 
         let nameText = new PIXI.Text(name, {fontFamily : 'Arial', fontSize: 24, fill : colors[this.id], align : 'left'});
@@ -1014,12 +1059,48 @@ class CPlayer
         this.count = -1;
         this.delta = 0;
         this.status = new PIXI.Text('', {fontFamily : 'Arial', fontSize: 18, fill : 0x333333, align : 'left'});
-        this.status.x = nameText.x + nameText.width + 10;
+        this.status.x = nameText.x + nameText.width + CPlayer.margin;
         this.status.y = nameText.y + nameText.height - this.status.height;
         this.container.addChild(this.status);
         this.lastPlayed = '';
 
+        this.container.interactive = true;
+        this.container.on('mousemove', (event: PIXI.InteractionEvent) =>
+        {
+            let point = event.data.getLocalPosition(this.container);
+            this.mouseOver = (point.x >= 0 && point.x < this.container.width && point.y >= 0 && point.y < this.container.height);
+        });
+        
+        const enableMouseScale = false;
+        let calcScaleTarget = () => (this.local || (this.mouseOver && enableMouseScale)) ? 1 : 0.3;
+        this.scale = calcScaleTarget();
+        
+        app.ticker.add((delta: number) =>
+        {
+            let scaleTarget = calcScaleTarget();
+            if (this.scale !== scaleTarget)
+            {
+                this.scale = decay1d(this.scale, scaleTarget, delta, 0.75, 0.01 * scaleTarget);
+                for (const card of this.cards)
+                {
+                    card.scale = this.scale;
+                }
+            }
+
+            this.updateCardTargets();
+        });
+
         app.stage.addChild(this.container);
+    }
+
+    updateCardTargets()
+    {
+        let x = CPlayer.margin;
+        for (const card of this.cards)
+        {
+            card.target = new Point(x, 34);
+            x += card.graphics.width + CPlayer.margin;
+        }
     }
 
     updateStatus()
@@ -1056,9 +1137,10 @@ class CPlayer
     {
         let card = new CCard(cardId);
         this.container.addChild(card.graphics);
-        card.setPosition(x - this.container.x, y - this.container.y);
+        card.position = new Point(x - this.container.x, y - this.container.y);
+        card.scale = this.scale;
         this.cards.push(card);
-        this.updateTargets();
+        this.updateCardTargets();
         
         card.on('click', (cardId: number) =>
         {
@@ -1075,37 +1157,33 @@ class CPlayer
         this.cards.splice(cardIndex, 1);
         this.container.removeChild(card.graphics);
         card.destroy();
-        this.updateTargets();
 
         // Report the last card played in the status
         let gameCard = game.getCard(cardId) as Card;
         this.lastPlayed = gameCard.name;
         this.updateStatus();
     }
-
-    updateTargets()
-    {
-        for (let i = 0; i < this.cards.length; i++)
-        {
-            this.cards[i].setTarget(10 + i * 110, 34);
-        }
-    }
 }
 
 // Map hidden card IDs to their CCards, in order to update the graphics on reveal
 class CCard extends EventEmitter
 {
+    cardId: number;
+    graphics: PIXI.Graphics;
+    enabled: boolean = false;
+    mouseOver: boolean = false;
+    private _target: Point = Point.zero;
+    private _scale: number = 1;
+    private _scaleTarget: number = 1;
+    snap: boolean = false; // if true, position and scale snap to targets instantly rather than animating
+    dirty: boolean = true; // if true, graphics need to be updated
+
     constructor(cardId: number)
     {
         super();
 
         this.cardId = cardId;
         this.graphics = new PIXI.Graphics();
-        this.enabled = false;
-        this.mouseOver = false;
-        this.targetX = 0;
-        this.targetY = 0;
-        this.updateGraphics();
 
         //
         // Handle mouse events
@@ -1122,13 +1200,13 @@ class CCard extends EventEmitter
         this.graphics.on('mouseover', () =>
         {
             this.mouseOver = true;
-            this.updateGraphics();
+            this.dirty = true;
         });
         
         this.graphics.on('mouseout', () =>
         {
             this.mouseOver = false;
-            this.updateGraphics();
+            this.dirty = true;
         });
 
         // Handle reveal
@@ -1136,7 +1214,7 @@ class CCard extends EventEmitter
         {
             if (cardId === this.cardId)
             {
-                this.updateGraphics();
+                this.dirty = true;
             }
         });
 
@@ -1148,6 +1226,7 @@ class CCard extends EventEmitter
     destroy()
     {
         app.ticker.remove(this.update, this);
+         //@ts-expect-error: think this is a problem in pixi .d.ts
         this.graphics.destroy(true);
     }
 
@@ -1155,45 +1234,118 @@ class CCard extends EventEmitter
     getCard() { return game.getCard(this.cardId); }
     isHidden() { return !this.getCard(); }
 
-    // Set the position immediately
-    setPosition(x: number, y: number)
+    get position(): Point { return new Point(this.graphics.x, this.graphics.y); }
+    set position(position: Point) { this.graphics.x = position.x; this.graphics.y = position.y; }
+    get target(): Point { return this._target; }
+    set target(target: Point)
     {
-        this.graphics.x = x;
-        this.graphics.y = y;
-        this.targetX = x;
-        this.targetY = y;
+        this._target = target.clone();
+        if (this.snap)
+        {
+            this.position = target;
+        }
+    }
+    get scale() { return this._scaleTarget; }
+    set scale(scale: number)
+    {
+        this._scaleTarget = scale;
+        if (this.snap)
+        {
+            this._scale = scale;
+            this.dirty = true;
+        }
     }
 
-    // Set the position to animate to
-    setTarget(x: number, y: number)
+    // Animate position and scale, update graphics
+    update(dt: number)
     {
-        this.targetX = x;
-        this.targetY = y;
-    }
+        // Animate position and scale
+        this.position = decay2d(this.position, this.target, dt);
+        if (this._scale !== this._scaleTarget)
+        {
+            this._scale = decay1d(this._scale, this._scaleTarget, dt, 0.75, 0.01 * this._scaleTarget);
+            this.dirty = true;
+        }
+        else if (this.position.equal(this.target))
+        {
+            this.snap = true;
+        }
 
-    // Animates position
-    update(delta: number)
-    {
-        let dx = this.graphics.x - this.targetX;
-        let dy = this.graphics.y - this.targetY;
-        let dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist === 0)
+        // Update graphics
+        if (this.dirty)
         {
-            return;
+            this.dirty = false;
+            
+            // Clean up old graphics
+            let children = [...this.graphics.children];
+            this.graphics.removeChildren();
+            for (const c of children)
+            {
+                //@ts-expect-error: think this is a problem in pixi .d.ts
+                c.destroy(true);
+            }
+            
+            let width = this.scale * cardWidth;
+            let height = this.scale * cardHeight;
+            let radius = 5 + this.scale * 5;
+            
+            let card = this.getCard();
+            
+            // Add the card background
+            this.graphics.clear();
+            this.graphics.lineStyle(2, this.graphics.interactive ? (this.mouseOver ? 0xee0000 : 0x0000ee) : 0x333333, 1);
+            this.graphics.beginFill(card ? 0xffffff : 0xaaaaaa);
+            this.graphics.drawRoundedRect(0, 0, width, height, radius);
+            this.graphics.endFill();
+
+            // Add the card content
+            if (!card)
+            {
+                // Unrevealed card
+                let text = new PIXI.Text('?', {fontFamily : 'Arial', fontSize: 24, fill : 0x333333, align : 'left'});
+                text.x = Math.floor((width - text.width) / 2);
+                text.y = Math.floor((height - text.height) / 2);
+                this.graphics.addChild(text);
+            }
+            else
+            {
+                let pixels = 0;
+                switch (card.type)
+                {
+                    case CardType.Circle:
+                    case CardType.Box:
+                    case CardType.Poly:
+                    case CardType.Eraser:
+                        let board = renderCard(card, 0, 1, 0);
+                        pixels = board.count(1)[0];
+                        this.texture = rtt(board, cardPalette);
+                        let sprite = new PIXI.Sprite(this.texture);
+                        sprite.x = Math.floor(this.graphics.width - sprite.width) / 2;
+                        sprite.y = Math.floor(this.graphics.height - sprite.height) / 2;
+                        this.graphics.addChild(sprite);
+                        break;
+                    case CardType.Line:
+                        pixels = (card as PaintCard).pixels;
+                        break;
+                    case CardType.Paint:
+                        pixels = (card as LineCard).pixels;
+                        break;
+                    default:
+                        break;
+                }
+
+                let text = new PIXI.Text(card.name, {fontFamily : 'Arial', fontSize: 24, fill : 0x222222, align : 'left'});
+                text.x = Math.floor((width - text.width) / 2);
+                text.y = Math.floor(10);
+                this.graphics.addChild(text);
+
+                let pxString = ((pixels === 0) ? '*' : pixels) + 'px';
+                let pxText = new PIXI.Text(pxString, {fontFamily : 'Arial', fontSize: 18, fill : 0x222222, align : 'left'});
+                pxText.x = Math.floor((width - pxText.width) / 2);
+                pxText.y = Math.floor(height - pxText.height - 10);
+                this.graphics.addChild(pxText);
+            }
         }
-        const gainPerFrame = 0.1;
-        const exp = -Math.log(1 - gainPerFrame);
-        let ratio = Math.exp(-delta * exp);
-        let newDist = ratio * dist;
-        if (newDist < 0.25)
-        {
-            ratio = 0;
-            newDist = 0;
-        }
-        dx *= ratio;
-        dy *= ratio;
-        this.graphics.x = this.targetX + dx;
-        this.graphics.y = this.targetY + dy;
     }
 
     setEnabled(enabled: boolean)
@@ -1204,74 +1356,6 @@ class CCard extends EventEmitter
         {
             this.mouseOver = false;
         }
-        this.updateGraphics();
-    }
-
-    updateGraphics()
-    {
-        // Clean up old graphics
-        let children = [...this.graphics.children];
-        this.graphics.removeChildren();
-        for (const c of children)
-        {
-            c.destroy(true);
-        }
-        
-        let card = this.getCard();
-        
-        // Add the card background
-        this.graphics.clear();
-        this.graphics.lineStyle(2, this.graphics.interactive ? (this.mouseOver ? 0xee0000 : 0x0000ee) : 0x333333, 1);
-        this.graphics.beginFill(card ? 0xffffff : 0xaaaaaa);
-        this.graphics.drawRoundedRect(0, 0, cardWidth, cardHeight, 10);
-        this.graphics.endFill();
-
-        // Add the card content
-        if (!card)
-        {
-            // Unrevealed card
-            let text = new PIXI.Text('?', {fontFamily : 'Arial', fontSize: 24, fill : 0x333333, align : 'left'});
-            text.x = Math.floor((cardWidth - text.width) / 2);
-            text.y = Math.floor((cardHeight - text.height) / 2);
-            this.graphics.addChild(text);
-        }
-        else
-        {
-            let pixels = 0;
-            switch (card.type)
-            {
-                case CardType.Circle:
-                case CardType.Box:
-                case CardType.Poly:
-                case CardType.Eraser:
-                    let board = renderCard(card, 0, 1, 0);
-                    pixels = board.count(1)[0];
-                    this.texture = rtt(board, cardPalette);
-                    let sprite = new PIXI.Sprite(this.texture);
-                    sprite.x = Math.floor(this.graphics.width - sprite.width) / 2;
-                    sprite.y = Math.floor(this.graphics.height - sprite.height) / 2;
-                    this.graphics.addChild(sprite);
-                    break;
-                case CardType.Line:
-                    pixels = (card as PaintCard).pixels;
-                    break;
-                case CardType.Paint:
-                    pixels = (card as LineCard).pixels;
-                    break;
-                default:
-                    break;
-            }
-
-            let text = new PIXI.Text(card.name, {fontFamily : 'Arial', fontSize: 24, fill : 0x222222, align : 'left'});
-            text.x = Math.floor((cardWidth - text.width) / 2);
-            text.y = Math.floor(10);
-            this.graphics.addChild(text);
-
-            let pxString = ((pixels === 0) ? '*' : pixels) + 'px';
-            let pxText = new PIXI.Text(pxString, {fontFamily : 'Arial', fontSize: 18, fill : 0x222222, align : 'left'});
-            pxText.x = Math.floor((cardWidth - pxText.width) / 2);
-            pxText.y = Math.floor(cardHeight - pxText.height - 10);
-            this.graphics.addChild(pxText);
-        }
+        this.dirty = true;
     }
 }

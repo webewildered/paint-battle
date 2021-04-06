@@ -7,6 +7,8 @@ export class Point
         public readonly y: number = x)
     {
     }
+
+    static get zero() { return new Point(0); }
     
     get array() { return [this.x, this.y]; }
 
@@ -34,6 +36,16 @@ export class Point
     sum() { return this.x + this.y; }
     lengthSquared() { return this.dot(this); }
     distanceSquared(point: Point) { return this.sub(point).lengthSquared(); }
+    length() { return Math.sqrt(this.lengthSquared()); }
+    norm(): Point
+    {
+        let l = this.length();
+        if (l === 0)
+        {
+            return Point.zero;
+        }
+        return this.mul(new Point(1 / l));
+    }
 
     greaterEqual(point: Point)
     {
