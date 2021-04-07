@@ -15,25 +15,7 @@ export enum CardType
 
 export class Card
 {
-    constructor(type: CardType, name: string, radius: number = 0)
-    {
-        this.type = type;
-        this.name = name;
-        this._radius = radius;
-    }
-
-    get radius(): number
-    {
-        if (this._radius <= 0)
-        {
-            throw new Error('Card "' + this.name + '" does not have a valid radius');
-        }
-        return this._radius;
-    }
-    
-    type: CardType;
-    name: string;
-    private _radius: number;
+    constructor(public type: CardType, public name: string, public radius: number = 0) {}
 }
 
 export class CircleCard extends Card
@@ -111,10 +93,104 @@ export class DynamiteCard extends Card
     }
 }
 
-export class Rules
+export enum CardName
 {
+    Circle,
+    Box,
+    Triangle,
+    Pentagon,
+    Septagon,
+    Line,
+    Paint,
+    Grow,
+    Dynamite
+}
+
+export enum CardFrequency
+{
+    None,
+    Few,
+    Average,
+    Many
+}
+
+export class CardSpec
+{
+    constructor(public name: CardName, public frequency: CardFrequency) {}
+}
+
+export class Options
+{
+    static readonly defaultDeck = 
+    [
+        new CardSpec(CardName.Box, CardFrequency.Average),
+        new CardSpec(CardName.Line, CardFrequency.Average),
+        new CardSpec(CardName.Grow, CardFrequency.Average),
+        new CardSpec(CardName.Paint, CardFrequency.Many),
+        new CardSpec(CardName.Triangle, CardFrequency.Few),
+        new CardSpec(CardName.Pentagon, CardFrequency.Few),
+        new CardSpec(CardName.Septagon, CardFrequency.Few),
+        new CardSpec(CardName.Dynamite, CardFrequency.Average)
+    ];
+
     blocking: boolean = false;
     size: number = 299;
+    deck: CardSpec[] = Options.defaultDeck;
+}
+
+export class Rules
+{
+    blocking: boolean;
+    size: number;
+    deck: Card[];
+
+    // Generate rules from options, with validation
+    constructor(numPlayers: number, options: Options|undefined = undefined)
+    {
+        this.blocking = !!(options && options.blocking);
+        this.size = (options && options.size > 0 && options.size < 600) ? options.size : 299;
+        
+        // Map card frequency to the number of cards for the chosen player count
+        const counts = new Map(
+        [
+            [CardFrequency.None, 0],
+            [CardFrequency.Few, [0, 3, 3, 4, 5, 6, 7][numPlayers]],
+            [CardFrequency.Average, [0, 5, 5, 5, 6, 7, 8][numPlayers]],
+            [CardFrequency.Many, [0, 7, 7, 7, 8, 8, 9][numPlayers]]
+        ]);
+        const generators = new Map(
+        [
+            [CardName.Box, () => Math.random() < 0.5 ? new BoxCard(45, 21) : new BoxCard(21, 45)],
+            [CardName.Circle, () => new CircleCard(31.5)],
+            [CardName.Dynamite, () => new DynamiteCard(20.5)],
+            [CardName.Grow, () => new GrowCard(4)],
+            [CardName.Paint, () => new PaintCard(4, 600)],
+            [CardName.Line, () => new LineCard(140)],
+            [CardName.Triangle, () => new PolyCard(3, 25.5, Math.random() * 2 * Math.PI)],
+            [CardName.Pentagon, () => new PolyCard(5, 23.5, Math.random() * 2 * Math.PI)],
+            [CardName.Septagon, () => new PolyCard(7, 21.5, Math.random() * 2 * Math.PI)],
+        ]);
+
+        let deckSpec = (options && options.deck) ? options.deck : Options.defaultDeck;
+        this.deck = [];
+        for (const cardSpec of deckSpec)
+        {
+            let count = counts.get(cardSpec.frequency);
+            if (count === undefined)
+            {
+                throw new Error('Invalid card frequency');
+            }
+            let generator = generators.get(cardSpec.name);
+            if (!generator)
+            {
+                throw new Error('Invalid card name');
+            }
+            for (let i = 0; i < count; i++)
+            {
+                this.deck.push(generator());
+            }
+        }
+    }
 }
 
 export class Reveal
@@ -151,7 +227,6 @@ export class Game extends EventEmitter
 {
     rules: Rules;
     board: Board;
-    deck: Card[];
     shuffle: number[];
     pile: number[];
     players: Player[];
@@ -180,29 +255,6 @@ export class Game extends EventEmitter
         if (!(numPlayers >= 1 && numPlayers <= 6))
         {
             throw new Error('Unsupported player count ' + numPlayers);
-        }
-
-        // Make a deck of cards
-        this.deck = [];
-        const countLow = [0, 3, 3, 4, 5, 6, 7][numPlayers];
-        const countMed = [0, 5, 5, 5, 6, 7, 8][numPlayers];
-        const countHigh = [0, 7, 7, 7, 8, 8, 9][numPlayers];
-
-        let addCard = (count: number, card: Card) => { this.deck = this.deck.concat(Array<Card>(count).fill(card)); };
-        addCard(countLow, new BoxCard(45, 21));
-        addCard(countLow, new BoxCard(21, 45));
-        addCard(countMed, new LineCard(140));
-        addCard(countMed, new GrowCard(4));
-        addCard(countHigh, new PaintCard(4, 600));
-        addCard(countLow, new PolyCard(3, 25.5, 0.2));
-        addCard(countLow, new PolyCard(5, 23.5, 0.4));
-        addCard(countLow, new PolyCard(7, 21.5, 0.6));
-        addCard(countHigh, new DynamiteCard(20.5));
-        
-        // Eraser doesn't do anything with blocking enabled
-        if (!rules.blocking)
-        {
-            addCard(countLow, new EraserCard(30.5));
         }
 
         // Shuffle the deck on server (shuffle = true), mark all cards hidden on client (shuffle = false)
@@ -244,6 +296,7 @@ export class Game extends EventEmitter
     }
 
     get size(): number { return this.rules.size; }
+    get deck(): Card[] { return this.rules.deck; }
 
     getCard(cardId: number): Card|undefined
     {

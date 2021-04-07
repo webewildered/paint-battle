@@ -1,4 +1,4 @@
-import { Rules, Action, Reveal, Game } from './game';
+import { Options, Rules,  Action, Reveal, Game } from './game';
 import { Socket, Server } from 'socket.io';
 import { GameEvent, GameLog } from './protocol';
 
@@ -289,19 +289,26 @@ module.exports = function(http: Server)
             socket.emit('join', key, playerKey, playerNames);
 
             // Listen for game start
-            socket.on('start', (rulesIn: Rules) =>
+            socket.on('start', (options: Options) =>
             {
-                // Validate rules
-                let rules: Rules = {
-                    blocking: (rulesIn && rulesIn.blocking),
-                    size: (rulesIn && rulesIn.size > 0 && rulesIn.size < 600) ? rulesIn.size: 299
-                };
-
                 // Check if the sender is host
                 let playerId = room.getPlayerId(socket);
                 if (playerId !== 0)
                 {
                     console.log('received start message from a non-host player');
+                    return;
+                }
+
+                // Generate rules from options, with validation
+                const numPlayers = room.players.length;
+                let rules: Rules;
+                try
+                {
+                    rules = new Rules(numPlayers, options);
+                }
+                catch (error)
+                {
+                    console.log('invalid rules: ' + error);
                     return;
                 }
                 
@@ -328,7 +335,7 @@ module.exports = function(http: Server)
                 //
 
                 const shuffle = true;
-                let game = new Game(room.players.length, shuffle, rules);
+                let game = new Game(numPlayers, shuffle, rules);
                 room.game = game;
 
                 game.on('deal', (playerId: number, cardId: number) =>

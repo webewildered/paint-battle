@@ -1,7 +1,7 @@
 // This requires the socket.io.js client in the global scope
 import { GameEvent, GameLog } from './protocol';
 import { Client } from './client';
-import { Rules } from './game';
+import { CardName, CardFrequency, CardSpec, Options, Rules } from './game';
 import { Socket } from 'socket.io-client';
 import * as io from 'socket.io-client';
 import { EventEmitter } from 'events';
@@ -11,6 +11,20 @@ import { EventEmitter } from 'events';
 import * as Cookies from 'js-cookie';
 
 type Socket = SocketIOClient.Socket;
+
+// Helper for dealing with enums
+function enumValues<O extends object>(obj: O, f: (e: number) => any)
+{
+    let keys = Object.keys(obj);
+    for (const key of keys)
+    {
+        let value = +key;
+        if (!Number.isNaN(value))
+        {
+            f(value);
+        }
+    }
+}
 
 class FakeSocket implements SocketIOClient.Emitter
 {
@@ -84,27 +98,37 @@ $(function()
         lobbyPlayers.push(new LobbyPlayer(name, li));
     }
 
-    function getRules(): Rules
+    function getOptions(): Options
     {
         let scale = $('#scaleRule').val() as number;
         let size = Math.round(600 / scale);
         size -= (1 - size % 2); // make odd
+
+        let deck: CardSpec[] = [];
+        enumValues(CardName, (e: number) =>
+        {
+            let select = $('#' + cardFormId(CardName[e]));
+            let frequency = parseInt(select.val() as string);
+            deck.push(new CardSpec(e as CardName, frequency as CardFrequency));
+        });
+
         return {
             blocking: $('#blockingRule').is(':checked'),
-            size: size
+            size: size,
+            deck: deck
         };
     }
 
     function becomeHost()
     {
-        $('#rulesForm').show();
+        $('#optionsForm').show();
         $('#startForm').show().on('submit', function()
         {
             if (!socket)
             {
                 throw new Error('becomeHost() failed');
             }
-            socket.emit('start', getRules());
+            socket.emit('start', getOptions());
             return false; // Don't reload the page
         });
     }
@@ -112,7 +136,7 @@ $(function()
     function startGame(playerNames: string[], localPlayerId: number, rules: Rules, init: GameEvent[] = [])
     {
         $('#lobby').hide();
-        $('#rulesForm').hide();
+        $('#optionsForm').hide();
         $('#playerList').empty();
 
         // Stop listening on the socket, client will take it over
@@ -124,7 +148,7 @@ $(function()
     {
         $('#joinForm').hide();
         $('#localForm').hide();
-        $('#rulesForm').hide();
+        $('#optionsForm').hide();
         $('#replayForm').hide();
     };
 
@@ -251,7 +275,7 @@ $(function()
     else
     {
         // Testing option - quick start a local game
-        $('#rulesForm').show();
+        $('#optionsForm').show();
         $('#localForm').show().on('submit', () =>
         {
             hideAll();
@@ -262,7 +286,7 @@ $(function()
             {
                 playerNames.push('Player ' + (i + 1));
             }
-            startGame(playerNames, -1, getRules());
+            startGame(playerNames, -1, new Rules(numPlayers, getOptions()));
             return false;
         });
         host = true;
@@ -321,4 +345,39 @@ $(function()
         // Don't reload the page
         return false;
     });
+
+    // Generate the deck options
+    let cardFormId = (name: string) => name + 'FormId';
+    enumValues(CardName, (cardName: number) => 
+    {
+        let id = cardFormId(CardName[cardName]);
+        let li = $('<li>');
+        li.append($('<label for="' + id + '">').text(CardName[cardName] + ' '));
+        let select = $('<select id="' + id + '">');
+        enumValues(CardFrequency, (frequency: number) =>
+        {
+            select.append($('<option value="' + frequency + '">').text(CardFrequency[frequency]));
+        });
+        li.append(select);
+        $('#cardList').append(li);
+    });
+    
+    let setDeck = (deckSpec: CardSpec[]) =>
+    {
+        // Reset values in case any aren't found in the deck
+        enumValues(CardName, (e: number) =>
+        {
+            $('#' + cardFormId(CardName[e])).val('' + CardFrequency.None);
+        });
+        
+        // Apply values from the deck
+        for (const spec of deckSpec)
+        {
+            $('#' + cardFormId(CardName[spec.name])).val('' + spec.frequency);
+        }
+    };
+
+    let resetDeck = () => setDeck(Options.defaultDeck);
+    $('#cardResetButton').on('click', resetDeck );
+    resetDeck();
 });
