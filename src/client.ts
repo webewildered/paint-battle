@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
-import { CardType, Card, BoxCard, PolyCard, LineCard, PaintCard, Rules, Action, Reveal, Game } from './game';
-import { Point, Board } from './board';
+import { CardType, Card, BoxCard, PolyCard, LineCard, PaintCard, CutCard, Rules, Action, Reveal, Game } from './game';
+import { Point, Aabb, Board } from './board';
 import { GameEvent } from './protocol';
 const EventEmitter = require('events');
 const Color = require('color');
@@ -84,7 +84,7 @@ function rtt(board: Board, palette: number[][], buffer: Uint8ClampedArray|undefi
 }
 
 // Returns a Board representing what the card will allow the player to draw
-function renderCard(card: Card, on: number, off: number, minSize = 0)
+function renderCard(card: Card, on: number, off: number)
 {
     // Determine the dimensions required
     let w = 0;
@@ -108,17 +108,20 @@ function renderCard(card: Card, on: number, off: number, minSize = 0)
             h = Math.floor(boxCard.height);
             break;
         }
+        case CardType.Cut:
+        {
+            let cutCard = card as CutCard;
+            w = Math.floor(cutCard.width);
+            h = Math.floor(cutCard.height);
+            break;
+        }
         default:
         {
-            w = minSize;
-            h = minSize;
+            w = 1;
+            h = 1;
             break;
         }
     }
-
-    // Enforce minSize
-    w = Math.max(w, minSize);
-    h = Math.max(h, minSize);
     
     if (w % 2 === 0 || h % 2 === 0)
     {
@@ -139,6 +142,7 @@ function renderCard(card: Card, on: number, off: number, minSize = 0)
             break;
         }
         case CardType.Box:
+        case CardType.Cut:
         {
             board.drawBox(center, w, h, on);
             break;
@@ -174,6 +178,7 @@ export class Client extends EventEmitter
     overlaySprite: PIXI.Sprite;
     cursor: PIXI.Sprite | undefined;
     previewCursor: PIXI.Sprite | undefined;
+    cursorMask: PIXI.Graphics;
     
     pile: PIXI.Container;
     pileCard: CCard;
@@ -267,6 +272,12 @@ export class Client extends EventEmitter
         this.boardContainer = new PIXI.Container();
         this.boardContainer.scale.set(this.scale, this.scale);
         app.stage.addChild(this.boardContainer);
+
+        this.cursorMask = new PIXI.Graphics();
+        this.cursorMask.beginFill(0xffffff);
+        this.cursorMask.drawRect(0, 0, game.size, game.size);
+        this.cursorMask.isMask = true;
+        this.boardContainer.addChild(this.cursorMask);
 
         // Game board display
         this.buffer = new Uint8ClampedArray(game.board.bufferSize(1));
@@ -494,7 +505,7 @@ export class Client extends EventEmitter
     {
         // Create a cursor for the chosen card
         let card = game.getCard(cardId) as Card;
-        this.setCursor(card);
+        this.setCursor(renderCard(card, 0, 1));
         
         // Update the status
         this.status.text = 'Playing ' + card.name + ' - click on the board to draw, starting on your own color!';
@@ -795,6 +806,73 @@ export class Client extends EventEmitter
                 break;
             }
 
+            // Cut - two clicks with visualization after the first click
+            case CardType.Cut:
+            {
+                listener = (point: Point) =>
+                {
+                    let playPoint = this.getPlayPosition(point);
+                    if (!playPoint)
+                    {
+                        return;
+                    }
+                    endCancel();
+                    this.off('boardClick', listener);
+                    this.beginPreview();
+
+                    // Do the cut directly in the game board, saving a backup so that we can restore it
+                    const board = game.board.clone();
+                    const cutCard = card as CutCard;
+                    const cutAabb = Aabb.box(playPoint, new Point(cutCard.width, cutCard.height));
+                    const cutBoard = game.board.cut(cutAabb, game.players.length);
+                    this.updateBoard(false);
+                    game.updatePixelCounts();
+
+                    // In case the size of the cut was reduced because it wasn't entirely contained in the board, update the cursor
+                    const shapeBoard = new Board(cutCard.width, cutCard.height);
+                    shapeBoard.clear(1);
+                    const aabbOffset = cutAabb.min.max(Point.zero).sub(cutAabb.min);
+                    shapeBoard.drawAabb(new Aabb(aabbOffset, aabbOffset.add(cutBoard.size)), 0);
+                    this.setCursor(shapeBoard);
+
+                    // Update the visualization each frame to show the line to the current mouse position
+                    const offset = cutAabb.min.max(Point.zero).sub(playPoint);
+                    let lastPoint = new Point(-1);
+                    let update = () =>
+                    {
+                        let point2 = this.getBoardPosition();
+                        point2 = this.getPlayPosition(point2)??point2;
+                        if (!point2.equal(lastPoint))
+                        {
+                            lastPoint = point2;
+                            this.overlayBoard.clear(this.players.length);
+                            this.overlayBoard.paste(cutBoard, point2.add(offset));
+                            this.updateOverlayBoard();
+                        }
+                    };
+                    app.ticker.add(update);
+
+                    // Listen for the second click
+                    listener = (point2) =>
+                    {
+                        // 2nd point
+                        let playPoint2 = this.getPlayPosition(point2);
+                        if (!playPoint2)
+                        {
+                            return;
+                        }
+                        this.off('boardClick', listener);
+                        app.ticker.remove(update);
+                        game.board.copy(board); // Restore the backup
+                        game.updatePixelCounts();
+                        playAction(new Action(cardId, [playPoint!, playPoint2]));
+                        this.endPreview();
+                    };
+                    this.on('boardClick', listener);
+                };
+                break;
+            }
+
             default: throw new Error('Unknown card type');
         }
         this.on('boardClick', listener);
@@ -908,20 +986,18 @@ export class Client extends EventEmitter
         return game.startOk(testPoint) ? testPoint : undefined;
     }
 
-    setCursor(card: Card)
+    setCursor(shapeBoard: Board)
     {
         this.clearCursor();
 
         const crossRadius = 3;
         const crossSize = 2 * crossRadius + 1;
 
-        // Draw the card's shape to a board. 0 is shape, 1 is empty. (This will return an empty board if there is no shape).
-        let shapeBoard = renderCard(card, 0, 1, crossSize);
-
         // Take the outline of the shape
         let previewBoard = shapeBoard.buffer();
         previewBoard.outline(0, game.currentPlayer, this.players.length, shapeBoard);
         this.previewCursor = new PIXI.Sprite(rtt(previewBoard, this.previewPalette));
+        this.previewCursor.mask = this.cursorMask;
         this.boardContainer.addChild(this.previewCursor);
 
         // Create a crosshair cursor
@@ -929,6 +1005,7 @@ export class Client extends EventEmitter
         cursorBoard.clear(this.players.length);
         cursorBoard.drawCross(new Point(Math.floor(cursorBoard.width / 2), Math.floor(cursorBoard.height / 2)), crossRadius, this.players.length + 1);
         this.cursor = new PIXI.Sprite(rtt(cursorBoard, this.previewPalette));
+        this.cursor.mask = this.cursorMask;
         this.boardContainer.addChild(this.cursor);
 
         this.updateCursor();
@@ -1316,7 +1393,7 @@ class CCard extends EventEmitter
                     case CardType.Box:
                     case CardType.Poly:
                     case CardType.Eraser:
-                        let board = renderCard(card, 0, 1, 0);
+                        let board = renderCard(card, 0, 1);
                         pixels = board.count(1)[0];
                         this.texture = rtt(board, cardPalette);
                         let sprite = new PIXI.Sprite(this.texture);

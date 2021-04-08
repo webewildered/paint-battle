@@ -30,6 +30,7 @@ export class Point
     max(point: Point) { return this.binary(point, (a: number, b: number) => Math.max(a, b)); }
     dot(point: Point) { return this.mul(point).sum(); }
     abs() { return this.unary((a: number) => Math.abs(a)); }
+    neg() { return this.unary((a: number) => -a); }
     sign() { return this.unary((a: number) => Math.sign(a)); }
     floor() { return this.unary((a: number) => Math.floor(a)); }
     ceil() { return this.unary((a: number) => Math.ceil(a)); }
@@ -60,6 +61,24 @@ export class Point
     clone(): Point
     {
         return new Point(this.x, this.y);
+    }
+}
+
+export class Aabb
+{
+    constructor(public readonly min: Point, public readonly max: Point) {}
+
+    static box(center: Point, size: Point)
+    {
+        let half = size.sub(new Point(1)).mul(new Point(0.5));
+        return new Aabb(center.sub(half), center.add(half).add(new Point(1)));
+    }
+
+    get size(): Point { return this.max.sub(this.min); }
+
+    intersect(other: Aabb): Aabb
+    {
+        return new Aabb(this.min.max(other.min), this.max.min(other.max));
     }
 }
 
@@ -104,6 +123,7 @@ export class Board
 
     get width(): number { return this.size.x; }
     get height(): number { return this.size.y; }
+    get aabb(): Aabb { return new Aabb(Point.zero, this.size); }
 
     getIndex(point: Point): number
     {
@@ -434,6 +454,18 @@ export class Board
         }
     }
     
+    // Draw a box of color c centered at x, y with dimensions w, h
+    drawAabb(aabb: Aabb, c: number)
+    {
+        for (let u = aabb.min.x; u < aabb.max.x; u++)
+        {
+            for (let v = aabb.min.y; v < aabb.max.y; v++)
+            {
+                this.set(new Point(u, v), c);
+            }
+        }
+    }
+    
     // Draw a regular polygon of color c inscribed in the circle centered at x, y with radius r, oriented with angle a
     drawPoly(center: Point, s: number, r: number, a: number, c: number)
     {
@@ -686,6 +718,44 @@ export class Board
             }
             return true;
         };
+    }
+
+    //
+    // Blit
+    //
+    
+    cut(aabb: Aabb, c: number): Board
+    {
+        const source = aabb.intersect(this.aabb);
+        const sourceSize = source.size;
+        const dest = new Board(sourceSize.x, sourceSize.y);
+        for (let u = 0; u < sourceSize.x; u++)
+        {
+            for (let v = 0; v < sourceSize.y; v++)
+            {
+                const p = new Point(u, v);
+                const q = p.add(source.min);
+                dest.set(p, this.get(q)!);
+                this.set(q, c);
+            }
+        }
+        return dest;
+    }
+
+    paste(source: Board, position: Point)
+    {
+        // Paste in at the second position
+        const dest = new Aabb(position, position.add(source.size)).intersect(this.aabb);
+        const destSize = dest.size;
+        const origin = dest.min.sub(position);
+        for (let u = 0; u < destSize.x; u++)
+        {
+            for (let v = 0; v < destSize.y; v++)
+            {
+                let p = new Point(u, v);
+                this.set(p.add(dest.min), source.get(p.add(origin))!);
+            }
+        }
     }
 
     //

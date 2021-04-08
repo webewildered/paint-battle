@@ -1,4 +1,4 @@
-import { Point, PaintStep, ReusableBuffer, Board } from './board';
+import { Point, Aabb, PaintStep, ReusableBuffer, Board } from './board';
 import { EventEmitter } from 'events';
 
 export enum CardType
@@ -10,7 +10,8 @@ export enum CardType
     Paint,
     Grow,
     Eraser,
-    Dynamite
+    Dynamite,
+    Cut
 }
 
 export class Card
@@ -93,6 +94,14 @@ export class DynamiteCard extends Card
     }
 }
 
+export class CutCard extends Card
+{
+    constructor(public width: number, public height: number)
+    {
+        super(CardType.Cut, 'Cut');
+    }
+}
+
 export enum CardName
 {
     Circle,
@@ -103,7 +112,8 @@ export enum CardName
     Line,
     Paint,
     Grow,
-    Dynamite
+    Dynamite,
+    Cut
 }
 
 export enum CardFrequency
@@ -130,7 +140,8 @@ export class Options
         new CardSpec(CardName.Triangle, CardFrequency.Few),
         new CardSpec(CardName.Pentagon, CardFrequency.Few),
         new CardSpec(CardName.Septagon, CardFrequency.Few),
-        new CardSpec(CardName.Dynamite, CardFrequency.Average)
+        new CardSpec(CardName.Dynamite, CardFrequency.Average),
+        new CardSpec(CardName.Cut, CardFrequency.Average)
     ];
 
     blocking: boolean = false;
@@ -169,6 +180,7 @@ export class Rules
             [CardName.Triangle, () => new PolyCard(3, 25.5, Math.random() * 2 * Math.PI)],
             [CardName.Pentagon, () => new PolyCard(5, 23.5, Math.random() * 2 * Math.PI)],
             [CardName.Septagon, () => new PolyCard(7, 21.5, Math.random() * 2 * Math.PI)],
+            [CardName.Cut, () => new CutCard(37, 37)],
         ]);
 
         let deckSpec = (options && options.deck) ? options.deck : Options.defaultDeck;
@@ -498,6 +510,30 @@ export class Game extends EventEmitter
                 }
                 return dest.dynamiteStep(action.points[0], (card as DynamiteCard).radius, this.players.length);
             }
+            case CardType.Cut:
+            {
+                if (action.points.length !== 2 || !this.startOk(action.points[0]))
+                {
+                    throw new Error('Game.play() failed');
+                }
+                
+                // Cut from the board at the first position
+                const cutCard = card as CutCard;
+                const cutAabb = Aabb.box(action.points[0], new Point(cutCard.width, cutCard.height));
+                const cutBoard = this.board.cut(cutAabb, this.players.length);
+
+                // Validate the second point after applying the cut
+                this.updatePixelCounts();
+                if (!this.startOk(action.points[1]))
+                {
+                    throw new Error('Game.play() failed');
+                }
+
+                // Paste in at the second position
+                const targetMin = action.points[1].add(cutAabb.min.max(Point.zero).sub(action.points[0]));
+                this.board.paste(cutBoard, targetMin);
+                return () => false;
+            }
             default:
                 throw new Error('Game.play() failed: card type is invalid'); // should never happen even if an invalid message is received
         }
@@ -623,7 +659,12 @@ export class Game extends EventEmitter
                 break;
             }
         }
-        
+
+        this.updatePixelCounts();
+    }
+
+    updatePixelCounts()
+    {
         let count = this.board.count(this.players.length + 1);
         for (let i = 0; i < this.players.length; i++)
         {
