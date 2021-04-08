@@ -5,9 +5,6 @@ import { CardName, CardFrequency, CardSpec, Options, Rules } from './game';
 import { Socket } from 'socket.io-client';
 import * as io from 'socket.io-client';
 import { EventEmitter } from 'events';
-//import Cookies from 'js-cookie';
-//import Cookies = require("../node_modules/@types/js-cookie");
-//import Cookies from 'js-cookie';
 import * as Cookies from 'js-cookie';
 
 type Socket = SocketIOClient.Socket;
@@ -71,6 +68,7 @@ class LobbyPlayer
 
 const gameKeyCookie = 'gameKey';
 const playerKeyCookie = 'playerKey';
+const optionsCookie = 'options';
 
 // Entry point.
 // Manages the lobby UI in index.html.
@@ -112,11 +110,15 @@ $(function()
             deck.push(new CardSpec(e as CardName, frequency as CardFrequency));
         });
 
-        return {
+        const options = {
             blocking: $('#blockingRule').is(':checked'),
             size: size,
             deck: deck
         };
+
+        Cookies.set(optionsCookie, JSON.stringify(options), { expires: 7 });
+
+        return options;
     }
 
     function becomeHost()
@@ -376,8 +378,17 @@ $(function()
             $('#' + cardFormId(CardName[spec.name])).val('' + spec.frequency);
         }
     };
+    $('#cardResetButton').on('click', () => setDeck(Options.defaultDeck) );
 
-    let resetDeck = () => setDeck(Options.defaultDeck);
-    $('#cardResetButton').on('click', resetDeck );
-    resetDeck();
+    // Load saved options
+    let options = new Options();
+    let savedOptions = Cookies.get(optionsCookie);
+    if (savedOptions)
+    {
+        options = JSON.parse(savedOptions) as Options;
+    }
+
+    setDeck(options.deck);
+    $('#blockingRule').prop('checked', options.blocking);
+    $('#scaleRule').val(Math.round(600 / options.size)); // TODO this is matched to conversion in getOptions(), easy to break
 });

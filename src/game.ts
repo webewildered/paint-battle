@@ -144,8 +144,8 @@ export class Options
         new CardSpec(CardName.Cut, CardFrequency.Average)
     ];
 
-    blocking: boolean = false;
-    size: number = 299;
+    blocking: boolean = true;
+    size: number = 149;
     deck: CardSpec[] = Options.defaultDeck;
 }
 
