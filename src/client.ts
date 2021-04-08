@@ -503,25 +503,45 @@ export class Client extends EventEmitter
 
     playCard(cardId: number)
     {
-        // Create a cursor for the chosen card
         let card = game.getCard(cardId) as Card;
-        this.setCursor(renderCard(card, 0, 1));
         
-        // Update the status
-        this.status.text = 'Playing ' + card.name + ' - click on the board to draw, starting on your own color!';
-        this.cancel.visible = true;
+        // Helper - play an action and animate the result
+        let playAction = (action: Action) => this.animateStep(this.playAction(action));
 
+        // Helper - remove the cancel button once it is no longer possible to backtrack
         let endCancel = () =>
         {
             this.cancel.visible = false;
             this.removeAllListeners('cancel');
         };
 
-        let playAction = (action: Action) => this.animateStep(this.playAction(action));
+        // Handle redo
+        let cardName = card.name;
+        if (card.type === CardType.Redo)
+        {
+            let redoTarget = game.redoTarget;
+            if (!redoTarget)
+            {
+                // No target, fizzle
+                playAction(new Action(cardId, []));
+                return;
+            }
+            card = redoTarget;
+            cardName = card.name + ' (redo)';
+        }
+        
+        // Update the status
+        this.status.text = 'Playing ' + cardName + ' - click on the board to draw, starting on your own color!';
+        this.cancel.visible = true;
+        
+        // Create a cursor for the chosen card
+        this.setCursor(renderCard(card, 0, 1));
 
         // Set the card's event listener
         let listener: (point: Point) => void;
         let onCancel = () => { this.off('boardClick', listener); }; // default cancel handler, some are more complicated
+
+
         switch (card.type)
         {
             // Single-click cards with no special visualization
@@ -875,6 +895,8 @@ export class Client extends EventEmitter
 
             default: throw new Error('Unknown card type');
         }
+
+        // Set up the default listener
         this.on('boardClick', listener);
 
         this.on('cancel', () =>

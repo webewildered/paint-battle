@@ -11,7 +11,8 @@ export enum CardType
     Grow,
     Eraser,
     Dynamite,
-    Cut
+    Cut,
+    Redo
 }
 
 export class Card
@@ -113,7 +114,8 @@ export enum CardName
     Paint,
     Grow,
     Dynamite,
-    Cut
+    Cut,
+    Redo
 }
 
 export enum CardFrequency
@@ -141,7 +143,8 @@ export class Options
         new CardSpec(CardName.Pentagon, CardFrequency.Few),
         new CardSpec(CardName.Septagon, CardFrequency.Few),
         new CardSpec(CardName.Dynamite, CardFrequency.Average),
-        new CardSpec(CardName.Cut, CardFrequency.Average)
+        new CardSpec(CardName.Cut, CardFrequency.Average),
+        new CardSpec(CardName.Redo, CardFrequency.Average)
     ];
 
     blocking: boolean = true;
@@ -181,6 +184,7 @@ export class Rules
             [CardName.Pentagon, () => new PolyCard(5, 23.5, Math.random() * 2 * Math.PI)],
             [CardName.Septagon, () => new PolyCard(7, 21.5, Math.random() * 2 * Math.PI)],
             [CardName.Cut, () => new CutCard(37, 37)],
+            [CardName.Redo, () => new Card(CardType.Redo, "Redo")],
         ]);
 
         let deckSpec = (options && options.deck) ? options.deck : Options.defaultDeck;
@@ -245,9 +249,7 @@ export class Game extends EventEmitter
     queue: Action[];
     numDisconnected: number;
     currentPlayer: number;
-    
-    // Temporary buffer for draw
-    drawBuffer: ReusableBuffer;
+    played: number[] = []; // card IDs previously played
 
     constructor(numPlayers: number, shuffle: boolean, rules: Rules)
     {
@@ -262,7 +264,6 @@ export class Game extends EventEmitter
         // Initialize the game board
         this.board = new Board(this.size, this.size);
         this.board.clear(numPlayers);
-        this.drawBuffer = new ReusableBuffer(this.board);
 
         if (!(numPlayers >= 1 && numPlayers <= 6))
         {
@@ -309,6 +310,19 @@ export class Game extends EventEmitter
 
     get size(): number { return this.rules.size; }
     get deck(): Card[] { return this.rules.deck; }
+
+    get redoTarget(): Card | undefined
+    {
+        for (let i = this.played.length - 1; i >= 0; i--)
+        {
+            let card = this.getCard(this.played[i]);
+            if (card && card.type !== CardType.Redo)
+            {
+                return card;
+            }
+        }
+        return undefined;
+    }
 
     getCard(cardId: number): Card|undefined
     {
@@ -368,6 +382,17 @@ export class Game extends EventEmitter
         if (!card)
         {
             throw new Error('Game.play() failed: card is invalid');
+        }
+
+        // Handle redos
+        if (card.type === CardType.Redo)
+        {
+            card = this.redoTarget;
+            if (!card)
+            {
+                // No valid target, the redo fizzles
+                return () => false;
+            }
         }
 
         dest.matchDimensions(this.board);
@@ -613,6 +638,7 @@ export class Game extends EventEmitter
                 return true;
             }
 
+            this.played.push(action.cardId);
             this.queue.shift();
             this.emit('updateBoard');
             this.nextTurn();
