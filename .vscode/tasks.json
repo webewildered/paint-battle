@@ -20,5 +20,10 @@
             "type": "shell",
             "command": "npx webpack",
         },
+        {
+            "label": "webpackTest",
+            "type": "shell",
+            "command": "npx webpack --config ./webpack.config.test.js",
+        },
     ]
 }

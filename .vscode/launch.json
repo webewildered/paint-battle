@@ -30,7 +30,14 @@
             "url": "http://localhost:3000",
             "webRoot": "${workspaceFolder}",
             "preLaunchTask": "webpack",
-            //"runtimeArgs": ["--disable-3d-apis"]
+        },
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Test (Chrome)",
+            "url": "http://localhost:3000/test.html",
+            "webRoot": "${workspaceFolder}",
+            "preLaunchTask": "webpackTest",
         },
     ]
 }

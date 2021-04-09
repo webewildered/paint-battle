@@ -12,12 +12,13 @@ export enum CardType
     Eraser,
     Dynamite,
     Cut,
-    Redo
+    Redo,
+    Lasso
 }
 
 export class Card
 {
-    constructor(public type: CardType, public name: string, public radius: number = 0) {}
+    constructor(public type: CardType, public name: string = CardType[type], public radius: number = 0) {}
 }
 
 export class CircleCard extends Card
@@ -32,7 +33,7 @@ export class BoxCard extends Card
 {
     constructor(public width: number, public height: number)
     {
-        super(CardType.Box, 'Box');
+        super(CardType.Box);
     }
 }
 
@@ -51,24 +52,18 @@ export class PolyCard extends Card
 
 export class LineCard extends Card
 {
-    constructor(pixels: number)
+    constructor(public pixels: number)
     {
-        super(CardType.Line, 'Line');
-        this.pixels = pixels;
+        super(CardType.Line);
     }
-
-    pixels: number;
 }
 
 export class PaintCard extends Card
 {
-    constructor(radius: number, pixels: number)
+    constructor(radius: number, public pixels: number)
     {
         super(CardType.Paint, 'Paint', radius);
-        this.pixels = pixels;
     }
-
-    pixels: number;
 }
 
 export class GrowCard extends Card
@@ -99,7 +94,7 @@ export class CutCard extends Card
 {
     constructor(public width: number, public height: number)
     {
-        super(CardType.Cut, 'Cut');
+        super(CardType.Cut);
     }
 }
 
@@ -115,7 +110,8 @@ export enum CardName
     Grow,
     Dynamite,
     Cut,
-    Redo
+    Redo,
+    Lasso
 }
 
 export enum CardFrequency
@@ -144,7 +140,8 @@ export class Options
         new CardSpec(CardName.Septagon, CardFrequency.Few),
         new CardSpec(CardName.Dynamite, CardFrequency.Average),
         new CardSpec(CardName.Cut, CardFrequency.Average),
-        new CardSpec(CardName.Redo, CardFrequency.Average)
+        new CardSpec(CardName.Redo, CardFrequency.Average),
+        new CardSpec(CardName.Lasso, CardFrequency.Few)
     ];
 
     blocking: boolean = true;
@@ -184,7 +181,8 @@ export class Rules
             [CardName.Pentagon, () => new PolyCard(5, 23.5, Math.random() * 2 * Math.PI)],
             [CardName.Septagon, () => new PolyCard(7, 21.5, Math.random() * 2 * Math.PI)],
             [CardName.Cut, () => new CutCard(37, 37)],
-            [CardName.Redo, () => new Card(CardType.Redo, "Redo")],
+            [CardName.Redo, () => new Card(CardType.Redo)],
+            [CardName.Lasso, () => new Card(CardType.Lasso)]
         ]);
 
         let deckSpec = (options && options.deck) ? options.deck : Options.defaultDeck;
@@ -397,7 +395,7 @@ export class Game extends EventEmitter
 
         dest.matchDimensions(this.board);
 
-        let drawFlood = (start: Point, testColor: number, setColor: number, f: (point: Point) => boolean) => dest.floodfStep(start, (point: Point) =>
+        let drawFlood = (start: Point, testColor: number, setColor: number, f: (point: Point) => boolean) => dest.floodfStep([start], (point: Point) =>
         {
             if (this.isOpen(point, testColor) && f(point))
             {
@@ -559,6 +557,81 @@ export class Game extends EventEmitter
                 this.board.paste(cutBoard, targetMin);
                 return () => false;
             }
+            case CardType.Lasso:
+            {
+                // Check if the loop is large enough to have interior area.
+                // This avoids edge cases that would be possible in the remaining code otherwise.
+                if (action.points.length < 8)
+                {
+                    return () => false;
+                }
+
+                // Determine the loop orientation. First search for the point with least y coordinate among
+                // all points sharing the least x coordinate. Validate the points as well: each one must be a single
+                // step from the one before it, forming a loop, and each must be in the player's own territory
+                let keyIndex = 0;
+                let keyPoint = action.points[0];
+                let lastPoint = action.points[action.points.length - 1];
+                for (let i = 0; i < action.points.length; i++)
+                {
+                    let point = action.points[i];
+                    if (!this.startOk(point) || point.sub(lastPoint).abs().sum() !== 1)
+                    {
+                        throw new Error('Game.play() failed: points are invalid');
+                    }
+                    lastPoint = point;
+                    if (point.x < keyPoint.x || (point.x === keyPoint.x && point.y < keyPoint.y))
+                    {
+                        keyPoint = point;
+                        keyIndex = i;
+                    }
+                }
+
+                // The loop is in counterclockwise order if and only if the key point's successor has a greater y coordinate.
+                // The successor differs from the key point on exactly one axis. If it has the same y coordinate then it must
+                // have a greater x coordinate since no point has a lesser x coordinate than the key, and that implies clockwise
+                // order. If it has a lesser y coordinate then it share the key point's x coordinate, which contradicts that the
+                // key point has the least y coordinate of any point sharing its x coordinate.
+                if (action.points[(keyIndex + 1) % action.points.length].y <= keyPoint.y)
+                {
+                    // The loop is in clockwise order, reverse it.
+                    action.points.reverse();
+                }
+
+                // Make a border around the loop
+                // We can determine which of the neighbors of each pixel are part of the border by comparing
+                // its position to its successor's and predecessor's
+                let deltaIn = action.points[action.points.length - 1].sub(action.points[action.points.length - 2]);
+                let borderBoard = this.board.buffer(0);
+                for (let j = action.points.length - 1, k = 0; k < action.points.length; j = k, k++)
+                {
+                    let deltaOut = action.points[k].sub(action.points[j]);
+                    let ccw = new Point(deltaIn.y, -deltaIn.x);
+                    if (deltaIn.equal(deltaOut))
+                    {
+                        borderBoard.set(action.points[j].sub(ccw), 1);
+                    }
+                    else if (deltaOut.equal(ccw))
+                    {
+                        borderBoard.set(action.points[j].add(deltaIn), 1);
+                        borderBoard.set(action.points[j].sub(deltaOut), 1);
+                    }
+                    deltaIn = deltaOut;
+                }
+
+                // Flood fill the interior of the border
+                let floodStep = borderBoard.floodfStep(action.points, (point: Point) =>
+                {
+                    if (!borderBoard.get(point))
+                    {
+                        this.board.set(point, this.currentPlayer);
+                        return true;
+                    }
+                    return false;
+                });
+
+                return () => floodStep(1);
+            }
             default:
                 throw new Error('Game.play() failed: card type is invalid'); // should never happen even if an invalid message is received
         }
@@ -590,6 +663,7 @@ export class Game extends EventEmitter
         }
 
         // Validate the action struct
+        // TODO - 1000 might not be enough for some legitimate uses of lasso. Allow more?
         if (!Number.isFinite(action.cardId) || !Array.isArray(action.points) || action.points.length > 1000 || 
             !Array.isArray(action.reveals) || action.reveals.length > 1000)
         {
@@ -698,9 +772,10 @@ export class Game extends EventEmitter
         }
     }
 
+    // TODO can we limit these to the board now?
     private coordsOk(point: Point)
     {
-        return point.x > -100000 && point.x < 100000 && point.y > -100000 && point.y < 100000;
+        return point.x > -100000 && point.x < 100000 && point.y > -100000 && point.y < 100000 && Math.round(point.x) === point.x && Math.round(point.y) === point.y;
     }
 
     startOk(point: Point)

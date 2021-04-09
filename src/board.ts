@@ -62,6 +62,11 @@ export class Point
     {
         return new Point(this.x, this.y);
     }
+
+    toString()
+    {
+        return '(' + this.x + ', ' + this.y + ')';
+    }
 }
 
 export class Aabb
@@ -274,7 +279,7 @@ export class Board
     
     // Returns a function that will execute dijkstraf() in steps, increasing the maximum cost each time it is called by a
     // delta that you pass in (defaults to 1).  The step function returns false when it is complete.
-    dijkstrafStep(start: Point, maxCost: number, f: (point: Point, path: () => Point[]) => Node[])
+    dijkstrafStep(start: Point[], maxCost: number, f: (point: Point, path: () => Point[]) => Node[] | undefined)
     {
         // Buffer tracking visited pixels. -1 = unvisited, otherwise the value is the index of the previous pixel on the path,
         // or in the case of the first pixel, its own index
@@ -282,11 +287,14 @@ export class Board
         
         // Visit pixels in cost order beginning from the start point
         let queue = new PriorityQueue({ comparator: function(a: Node, b: Node) { return b.cost - a.cost; }}); // lower cost -> higher priority
-        queue.enqueue(new Node(start, 0, visited.getIndex(start)));
+        for (const point of start)
+        {
+            queue.enqueue(new Node(point, 0, visited.getIndex(point)));
+        };
 
         // Track the bounding box of pixels visited
-        let min: Point = start;
-        let max: Point = start;
+        let min: Point = new Point(Infinity);
+        let max: Point = new Point(-Infinity);
 
         // Return a stepping function
         let stepCost = 0;
@@ -312,14 +320,18 @@ export class Board
                         while (true)
                         {
                             let predecessor = visited.data[index];
-                            path.push(visited.getPoint(predecessor));
                             if (predecessor === index)
                             {
                                 return path;
                             }
+                            path.push(visited.getPoint(predecessor));
                             index = predecessor;
                         }
                     });
+                    if (!neighbors)
+                    {
+                        return false;
+                    }
                     const index = visited.getIndex(item);
                     for (const neighbor of neighbors)
                     {
@@ -344,15 +356,16 @@ export class Board
     // f(point, path) receives the coordinates of the visited pixel in point and can call path() to get an
     // array containing the path from start to point, beginning with the first pixel before point and ending
     // with start.  f returns a list of point's neighbors and the cost to reach them from point; the returned
-    // Nodes' predecessors are unused and do not need to be set.
-    dijkstraf(start: Point, maxCost: number, f: (point: Point, path: () => Point[]) => Node[])
+    // Nodes' predecessors are unused and do not need to be set. If f returns undefined then the search
+    // terminates immediately.
+    dijkstraf(start: Point[], maxCost: number, f: (point: Point, path: () => Point[]) => Node[] | undefined)
     {
         this.dijkstrafStep(start, maxCost, f)(maxCost);
     }
 
     // Returns a function that will execute floodf() in steps.
     // Works the same as dijkstrafStep().
-    floodfStep(start: Point, f: (point: Point, path: () => Point[]) => boolean)
+    floodfStep(start: Point[], f: (point: Point, path: () => Point[]) => boolean)
     {
         return this.dijkstrafStep(start, Infinity, (point: Point, path: () => Point[]) =>
         {
@@ -368,7 +381,7 @@ export class Board
 
     // Flood fill - calls f(u, v) for every pixel reachable through a series of horizontal and vertical steps from (x, y) such that f returns true for every
     // other pixel on the path.  f() is never called more than once for the same pixel.
-    floodf(start: Point, f: (point: Point, path: () => Point[]) => boolean)
+    floodf(start: Point[], f: (point: Point, path: () => Point[]) => boolean)
     {
         this.floodfStep(start, f)(Infinity);
     }
@@ -395,7 +408,7 @@ export class Board
 
         // Search outwards from the flooded region
         let sqrt2 = Math.sqrt(2);
-        return this.dijkstrafStep(start, r, (point: Point) =>
+        return this.dijkstrafStep([start], r, (point: Point) =>
         {
             if (!f(point)) { return []; }
 
@@ -425,6 +438,43 @@ export class Board
     growf(point: Point, r: number, c: number, f: (point: Point) => boolean)
     {
         this.growfStep(point, r, c, f)(Infinity);
+    }
+
+    // Finds the shortest path from start to target via a series of single-pixel horizontal and vertical steps such that
+    // for every point on the path, f returns true. Returns a list of points from start to target inclusive, or an empty
+    // list if no path exists.
+    pathf(start: Point, target: Point, f: (point: Point) => boolean): Point[]
+    {
+        let pathOut: Point[] = [];
+        let step = this.dijkstraf([start], Infinity, (point: Point, path: () => Point[]) =>
+        {
+            // Check if the target was reached
+            if (point.equal(target))
+            {
+                // Save the path and terminate the search
+                pathOut = path();
+                pathOut.reverse();
+                pathOut.push(target);
+                return undefined;
+            }
+
+            const neighbors: Node[] = [];
+            let addNeighbor = (direction: Point) =>
+            {
+                const neighbor = point.add(direction);
+                if (f(neighbor))
+                {
+                    neighbors.push(new Node(neighbor, 1));
+                }
+            };
+            
+            addNeighbor(new Point(-1, 0));
+            addNeighbor(new Point(1, 0));
+            addNeighbor(new Point(0, -1));
+            addNeighbor(new Point(0, 1));
+            return neighbors;
+        });
+        return pathOut;
     }
 
     //
@@ -549,7 +599,7 @@ export class Board
             current = point;
 
             // Floodfill a circle centered at the line pixel
-            this.floodf(point, (point: Point) =>
+            this.floodf([point], (point: Point) =>
             {
                 // Check if the pixel is within the circle and not blocked by f
                 if (point.distanceSquared(current) <= rSquared && f(point))
@@ -614,7 +664,7 @@ export class Board
     // Copies the continuous (by cardinal movement) c-colored region of src containing (x, y) to this
     drawFlood(src: Board, start: Point, c: number)
     {
-        src.floodf(start, (point: Point) =>
+        src.floodf([start], (point: Point) =>
         {
             if (src.get(point) === c)
             {

@@ -1,4 +1,3 @@
-// This requires the socket.io.js client in the global scope
 import { GameEvent, GameLog } from './protocol';
 import { Client } from './client';
 import { CardName, CardFrequency, CardSpec, Options, Rules } from './game';

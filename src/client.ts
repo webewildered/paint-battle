@@ -703,7 +703,7 @@ export class Client extends EventEmitter
 
                         // Search for a path from the last point
                         let found = false;
-                        this.overlayBoard.floodf(last, (point: Point, getPath: () => Point[]) =>
+                        this.overlayBoard.floodf([last], (point: Point, getPath: () => Point[]) =>
                         {
                             const maxDistanceSq = 25; // Search within a 5px radius
                             if (found || !game.isOpen(point, game.currentPlayer) || last.distanceSquared(point) > maxDistanceSq)
@@ -887,6 +887,119 @@ export class Client extends EventEmitter
                         game.updatePixelCounts();
                         playAction(new Action(cardId, [playPoint!, playPoint2]));
                         this.endPreview();
+                    };
+                    this.on('boardClick', listener);
+                };
+                break;
+            }
+
+            // Lasso - two clicks with visualization after the first click
+            case CardType.Lasso:
+            {
+                listener = (point: Point) =>
+                {
+                    let playPoint = this.getPlayPosition(point);
+                    if (!playPoint)
+                    {
+                        return;
+                    }
+                    endCancel();
+                    this.off('boardClick', listener);
+                    this.beginPreview();
+
+                    // List of points drawn so far
+                    let lassoPoints: Point[] = [];
+                    let lastPoint = () => lassoPoints[lassoPoints.length - 1];
+
+                    // Add the first point
+                    this.overlayBoard.set(playPoint, game.currentPlayer);
+                    lassoPoints.push(playPoint);
+                    let pointLock = true; // Prevent accidental single-point loop draw
+
+                    // Draw as the player moves the mouse
+                    let moveListener = (target: Point) =>
+                    {
+                        const playTarget = this.getPlayPosition(target);
+                        if (!playTarget)
+                        {
+                            // Exit if there is no target to path to, but disable pointLock as the mouse has moved off the start point
+                            pointLock = false;
+                            return;
+                        }
+                        const equal = playTarget.equal(lastPoint());
+                        if (equal && (pointLock || !playTarget.equal(lassoPoints[0])))
+                        {
+                            // Exit if the target hasn't moved, with an exception for the start point to provide an escape in cases where
+                            // there is only a single valid point
+                            return;
+                        }
+                        pointLock = false;
+                        
+                        // Try to path to the target point
+                        let path = game.board.pathf(lastPoint(), playTarget, (point: Point) => game.startOk(point));
+                        if (path.length)
+                        {
+                            // Note, single-point path occurs when lastPoint equals target
+                            for (let i = Math.min(1, path.length - 1); i < path.length; i++)
+                            {
+                                let point = path[i];
+                                if (this.overlayBoard.get(point) === game.currentPlayer)
+                                {
+                                    // There is now a complete loop. trim any points prior to the beginning of the loop.
+                                    for (let j = lassoPoints.length - 1; j >= 0 ; j--)
+                                    {
+                                        if (lassoPoints[j].equal(point))
+                                        {
+                                            // Check if the loop is large enough to have interior area
+                                            if (j === 0 || j <= lassoPoints.length - 8)
+                                            {
+                                                // Stop listening / previewing
+                                                this.off('mouseMove', moveListener);
+                                                this.off('boardClick', listener);
+                                                this.overlayBoard.clear(this.players.length);
+                                                this.updateOverlayBoard();
+                                                this.endPreview();
+                                                
+                                                // Submit the completed loop
+                                                lassoPoints = lassoPoints.slice(j, lassoPoints.length);
+                                                playAction(new Action(cardId, lassoPoints));
+            
+                                                return;
+                                            }
+                                            else
+                                            {
+                                                // This loop is most likely unintentional, cut it off and continue drawing
+                                                for (let k = j; k < lassoPoints.length; k++)
+                                                {
+                                                    this.overlayBoard.set(lassoPoints[k], this.players.length);
+                                                }
+                                                lassoPoints = lassoPoints.slice(0, j);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                this.overlayBoard.set(point, game.currentPlayer);
+                                lassoPoints.push(point);
+                            }
+                            this.updateOverlayBoard();
+                        }
+                    };
+                    this.on('mouseMove', moveListener);
+
+                    // Cancel on click
+                    listener = (point: Point) =>
+                    {
+                        // this.off('mouseMove', moveListener);
+                        // this.off('boardClick', listener);
+
+                        // // Clear the preview
+                        // this.overlayBoard.clear(this.players.length);
+                        // this.updateOverlayBoard();
+                
+                        // playAction(new Action(cardId, paintPoints));
+                        
+                        // this.endPreview();
                     };
                     this.on('boardClick', listener);
                 };

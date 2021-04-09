@@ -1,13 +1,14 @@
-import { Point, Board } from './board.js';
+import * as PIXI from 'pixi.js-legacy';
+import { Point, Aabb, Board } from './board';
 
 $(function()
 {
     // Render a board to a PIXI texture
-    function rtt(board: Board, scale: number, palette: number[][], buffer: Uint8ClampedArray|undefined = undefined)
+    function rtt(board: Board, palette: number[][], buffer: Uint8ClampedArray|undefined = undefined)
     {
         buffer = board.render(palette, buffer);
         let imageData = new ImageData(buffer, board.width);
-        
+
         let canvas = document.createElement('canvas');
         canvas.width = board.width;
         canvas.height = board.height;
@@ -17,13 +18,15 @@ $(function()
             throw new Error('getContext("2d") failed');
         }
         ctx.putImageData(imageData, 0, 0);
-        let texture = PIXI.Texture.from(canvas);
+        const options = { scaleMode: PIXI.SCALE_MODES.NEAREST };
+        let texture = PIXI.Texture.from(canvas, options);
         return texture;
     }
     
     let palette = [
         [0x3d, 0x1d, 0xef, 0xff],
-        [0xff, 0xff, 0xff, 0xff]
+        [0xff, 0xff, 0xff, 0xff],
+        [0xee, 0x12, 0x12, 0xff],
     ];
     let c = 0;
     let e = 1;
@@ -33,17 +36,27 @@ $(function()
     });
     document.body.appendChild(app.view);
 
-    let board = new Board(299, 299);
+    let board = new Board(149, 149);
     board.clear(e);
-    //board.drawCircle(149, 149, 25.5, c);
-    board.drawBox(new Point(149, 149), 50, 30, c);
+    board.drawAabb(new Aabb(new Point(10, 10), new Point(20, 20)), c);
+
+    let path = board.pathf(new Point(10, 10), new Point(19, 11), (point: Point) => board.get(point) === c);
+    if (path)
+    {
+        for (let i = 0; i < path.length; i++)
+        {
+            console.log(i + '\t' + path[i]);
+            board.set(path[i], 2);
+        }
+    }
 
     let scale = 2;
     let sprite = new PIXI.Sprite;
     sprite.x = 10;
     sprite.y = 10;
-    sprite.texture = rtt(board, scale, palette);
+    sprite.texture = rtt(board, palette);
     sprite.interactive = true;
+    sprite.scale.set(4, 4);
     app.stage.addChild(sprite);
 
     let text = new PIXI.Text('', {fontFamily : 'Arial', fontSize: 24, fill : 0x000000});
@@ -52,11 +65,9 @@ $(function()
     text.x = sprite.x + 10;
     text.text = board.count(0)[0].toString();
 
-    let step = board.dynamite(new Point(149, 149), 30, e);
     sprite.on('mousedown', (event: PIXI.InteractionEvent) =>
     {
-        //step();
         text.text = board.count(0)[0].toString();
-        sprite.texture = rtt(board, scale, palette);
+        sprite.texture = rtt(board, palette);
     });
 });
