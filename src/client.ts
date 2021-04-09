@@ -915,6 +915,54 @@ export class Client extends EventEmitter
                     this.overlayBoard.set(playPoint, game.currentPlayer);
                     lassoPoints.push(playPoint);
                     let pointLock = true; // Prevent accidental single-point loop draw
+                    let t = 0;
+                    let n = 0;
+                    const dashLength = 3;
+
+                    let update = (delta: number) =>
+                    {
+                        t += delta;
+                        const freq = 30;
+                        if (t > freq)
+                        {
+                            t -= freq;
+                            n++;
+                            let k = n % dashLength;
+                            let on = n % (dashLength * 2) < dashLength;
+                            for (let i = 0; i < lassoPoints.length; i++)
+                            {
+                                this.overlayBoard.set(lassoPoints[i], on ? game.currentPlayer : this.players.length);
+                                if (k-- === 0)
+                                {
+                                    k = dashLength - 1;
+                                    on = !on;
+                                }
+                            }
+                            this.updateOverlayBoard();
+                        }
+                    };
+                    app.ticker.add(update);
+
+                    let completeLoop = () =>
+                    {
+                        // Stop listening for mouse moves
+                        this.off('mouseMove', moveListener);
+
+                        // Click to confirm
+                        listener = (point: Point) =>
+                        {
+                            // Stop listening / previewing
+                            this.off('boardClick', listener);
+                            app.ticker.remove(update);
+                            this.overlayBoard.clear(this.players.length);
+                            this.updateOverlayBoard();
+                            this.endPreview();
+                            
+                            // Submit the completed loop
+                            playAction(new Action(cardId, lassoPoints));
+                        };
+                        this.on('boardClick', listener);
+                    };
 
                     // Draw as the player moves the mouse
                     let moveListener = (target: Point) =>
@@ -927,10 +975,15 @@ export class Client extends EventEmitter
                             return;
                         }
                         const equal = playTarget.equal(lastPoint());
-                        if (equal && (pointLock || !playTarget.equal(lassoPoints[0])))
+                        if (equal)
                         {
-                            // Exit if the target hasn't moved, with an exception for the start point to provide an escape in cases where
-                            // there is only a single valid point
+                            // Special case -- allow a single-point loop
+                            if (!pointLock && playTarget.equal(lassoPoints[0]))
+                            {
+                                completeLoop();
+                            }
+
+                            // Exit if the target hasn't moved
                             return;
                         }
                         pointLock = false;
@@ -940,12 +993,14 @@ export class Client extends EventEmitter
                         if (path.length)
                         {
                             // Note, single-point path occurs when lastPoint equals target
-                            for (let i = Math.min(1, path.length - 1); i < path.length; i++)
+                            for (let i = 1; i < path.length; i++)
                             {
                                 let point = path[i];
-                                if (this.overlayBoard.get(point) === game.currentPlayer)
+                                // TODO while overlay board is animated, can't use it to determine if a point is on the loop.
+                                // Make a separate board to cache that info if needed.
+                                //if (this.overlayBoard.get(point) === game.currentPlayer)
                                 {
-                                    // There is now a complete loop. trim any points prior to the beginning of the loop.
+                                    // Search for a complete loop
                                     for (let j = lassoPoints.length - 1; j >= 0 ; j--)
                                     {
                                         if (lassoPoints[j].equal(point))
@@ -953,17 +1008,12 @@ export class Client extends EventEmitter
                                             // Check if the loop is large enough to have interior area
                                             if (j === 0 || j <= lassoPoints.length - 8)
                                             {
-                                                // Stop listening / previewing
-                                                this.off('mouseMove', moveListener);
-                                                this.off('boardClick', listener);
-                                                this.overlayBoard.clear(this.players.length);
-                                                this.updateOverlayBoard();
-                                                this.endPreview();
-                                                
-                                                // Submit the completed loop
+                                                for (let k = 0; k < j; k++)
+                                                {
+                                                    this.overlayBoard.set(lassoPoints[k], this.players.length);
+                                                }
                                                 lassoPoints = lassoPoints.slice(j, lassoPoints.length);
-                                                playAction(new Action(cardId, lassoPoints));
-            
+                                                completeLoop();
                                                 return;
                                             }
                                             else
@@ -979,29 +1029,14 @@ export class Client extends EventEmitter
                                         }
                                     }
                                 }
-                                this.overlayBoard.set(point, game.currentPlayer);
+                                const on = (lassoPoints.length + n) % (dashLength * 2) < dashLength;
+                                this.overlayBoard.set(point, on ? game.currentPlayer : this.players.length);
                                 lassoPoints.push(point);
                             }
                             this.updateOverlayBoard();
                         }
                     };
                     this.on('mouseMove', moveListener);
-
-                    // Cancel on click
-                    listener = (point: Point) =>
-                    {
-                        // this.off('mouseMove', moveListener);
-                        // this.off('boardClick', listener);
-
-                        // // Clear the preview
-                        // this.overlayBoard.clear(this.players.length);
-                        // this.updateOverlayBoard();
-                
-                        // playAction(new Action(cardId, paintPoints));
-                        
-                        // this.endPreview();
-                    };
-                    this.on('boardClick', listener);
                 };
                 break;
             }
