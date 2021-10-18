@@ -117,6 +117,7 @@ export enum CardName
 export enum CardFrequency
 {
     None,
+    Rare,
     Few,
     Average,
     Many
@@ -139,9 +140,9 @@ export class Options
         new CardSpec(CardName.Pentagon, CardFrequency.Few),
         new CardSpec(CardName.Septagon, CardFrequency.Few),
         new CardSpec(CardName.Dynamite, CardFrequency.Average),
-        new CardSpec(CardName.Cut, CardFrequency.Average),
+        new CardSpec(CardName.Cut, CardFrequency.Few),
         new CardSpec(CardName.Redo, CardFrequency.Average),
-        new CardSpec(CardName.Lasso, CardFrequency.Few)
+        new CardSpec(CardName.Lasso, CardFrequency.Rare)
     ];
 
     blocking: boolean = true;
@@ -165,6 +166,7 @@ export class Rules
         const counts = new Map(
         [
             [CardFrequency.None, 0],
+            [CardFrequency.Rare, [0, 1, 1, 2, 2, 3, 3][numPlayers]],
             [CardFrequency.Few, [0, 3, 3, 4, 5, 6, 7][numPlayers]],
             [CardFrequency.Average, [0, 5, 5, 5, 6, 7, 8][numPlayers]],
             [CardFrequency.Many, [0, 7, 7, 7, 8, 8, 9][numPlayers]]
