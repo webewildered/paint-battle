@@ -893,150 +893,44 @@ export class Client extends EventEmitter
                 break;
             }
 
-            // Lasso - two clicks with visualization after the first click
+            // Lasso - single click with visualization of the range that will filled
             case CardType.Lasso:
             {
+                this.beginPreview();
+
+                // Update the visualization each frame to show the line to the current mouse position
+                let lastPoint = new Point(-1);
+                let update = () =>
+                {
+                    let point = this.getBoardPosition();
+                    if (!point.equal(lastPoint))
+                    {
+                        lastPoint = point;
+                        let floodBoard = this.overlayBoard.buffer(this.palette.length - 1);
+                        floodBoard.drawFlood(game.board, point, game.currentPlayer);
+                        this.overlayBoard.outline(game.currentPlayer, game.currentPlayer, this.players.length, floodBoard);
+                        this.updateOverlayBoard();
+                    }
+                };
+                app.ticker.add(update);
+                
+                onCancel = () =>
+                {
+                    this.off('boardClick', listener);
+                    app.ticker.remove(update);
+                };
+                
                 listener = (point: Point) =>
                 {
                     let playPoint = this.getPlayPosition(point);
-                    if (!playPoint)
+                    if (playPoint)
                     {
-                        return;
-                    }
-                    endCancel();
-                    this.off('boardClick', listener);
-                    this.beginPreview();
-
-                    // List of points drawn so far
-                    let lassoPoints: Point[] = [];
-                    let lastPoint = () => lassoPoints[lassoPoints.length - 1];
-
-                    // Add the first point
-                    this.overlayBoard.set(playPoint, game.currentPlayer);
-                    lassoPoints.push(playPoint);
-                    let pointLock = true; // Prevent accidental single-point loop draw
-                    let t = 0;
-                    let n = 0;
-                    const dashLength = 3;
-
-                    let update = (delta: number) =>
-                    {
-                        t += delta;
-                        const freq = 30;
-                        if (t > freq)
-                        {
-                            t -= freq;
-                            n++;
-                            let k = n % dashLength;
-                            let on = n % (dashLength * 2) < dashLength;
-                            for (let i = 0; i < lassoPoints.length; i++)
-                            {
-                                this.overlayBoard.set(lassoPoints[i], on ? game.currentPlayer : this.players.length);
-                                if (k-- === 0)
-                                {
-                                    k = dashLength - 1;
-                                    on = !on;
-                                }
-                            }
-                            this.updateOverlayBoard();
-                        }
-                    };
-                    app.ticker.add(update);
-
-                    let completeLoop = () =>
-                    {
-                        // Stop listening for mouse moves
-                        this.off('mouseMove', moveListener);
-
-                        // Click to confirm
-                        listener = (point: Point) =>
-                        {
-                            // Stop listening / previewing
-                            this.off('boardClick', listener);
-                            app.ticker.remove(update);
-                            this.overlayBoard.clear(this.players.length);
-                            this.updateOverlayBoard();
-                            this.endPreview();
-                            
-                            // Submit the completed loop
-                            playAction(new Action(cardId, lassoPoints));
-                        };
-                        this.on('boardClick', listener);
-                    };
-
-                    // Draw as the player moves the mouse
-                    let moveListener = (target: Point) =>
-                    {
-                        const playTarget = this.getPlayPosition(target);
-                        if (!playTarget)
-                        {
-                            // Exit if there is no target to path to, but disable pointLock as the mouse has moved off the start point
-                            pointLock = false;
-                            return;
-                        }
-                        const equal = playTarget.equal(lastPoint());
-                        if (equal)
-                        {
-                            // Special case -- allow a single-point loop
-                            if (!pointLock && playTarget.equal(lassoPoints[0]))
-                            {
-                                completeLoop();
-                            }
-
-                            // Exit if the target hasn't moved
-                            return;
-                        }
-                        pointLock = false;
+                        this.off('boardClick', listener);
+                        app.ticker.remove(update);
                         
-                        // Try to path to the target point
-                        let path = game.board.pathf(lastPoint(), playTarget, (point: Point) => game.startOk(point));
-                        if (path.length)
-                        {
-                            // Note, single-point path occurs when lastPoint equals target
-                            for (let i = 1; i < path.length; i++)
-                            {
-                                let point = path[i];
-                                // TODO while overlay board is animated, can't use it to determine if a point is on the loop.
-                                // Make a separate board to cache that info if needed.
-                                //if (this.overlayBoard.get(point) === game.currentPlayer)
-                                {
-                                    // Search for a complete loop
-                                    for (let j = lassoPoints.length - 1; j >= 0 ; j--)
-                                    {
-                                        if (lassoPoints[j].equal(point))
-                                        {
-                                            // Check if the loop is large enough to have interior area
-                                            if (j === 0 || j <= lassoPoints.length - 8)
-                                            {
-                                                for (let k = 0; k < j; k++)
-                                                {
-                                                    this.overlayBoard.set(lassoPoints[k], this.players.length);
-                                                }
-                                                lassoPoints = lassoPoints.slice(j, lassoPoints.length);
-                                                completeLoop();
-                                                return;
-                                            }
-                                            else
-                                            {
-                                                // This loop is most likely unintentional, cut it off and continue drawing
-                                                for (let k = j; k < lassoPoints.length; k++)
-                                                {
-                                                    this.overlayBoard.set(lassoPoints[k], this.players.length);
-                                                }
-                                                lassoPoints = lassoPoints.slice(0, j);
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                                const on = (lassoPoints.length + n) % (dashLength * 2) < dashLength;
-                                this.overlayBoard.set(point, on ? game.currentPlayer : this.players.length);
-                                lassoPoints.push(point);
-                            }
-                            this.updateOverlayBoard();
-                        }
-                    };
-                    this.on('mouseMove', moveListener);
+                        playAction(new Action(cardId, [playPoint]));
+                        this.endPreview();
+                    }
                 };
                 break;
             }

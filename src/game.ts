@@ -561,78 +561,63 @@ export class Game extends EventEmitter
             }
             case CardType.Lasso:
             {
-                // Check if the loop is large enough to have interior area.
-                // This avoids edge cases that would be possible in the remaining code otherwise.
-                if (action.points.length < 8)
+                if (action.points.length !== 1 || !this.startOk(action.points[0]))
                 {
-                    return () => false;
+                    throw new Error('Game.play() failed');
                 }
-
-                // Determine the loop orientation. First search for the point with least y coordinate among
-                // all points sharing the least x coordinate. Validate the points as well: each one must be a single
-                // step from the one before it, forming a loop, and each must be in the player's own territory
-                let keyIndex = 0;
-                let keyPoint = action.points[0];
-                let lastPoint = action.points[action.points.length - 1];
-                for (let i = 0; i < action.points.length; i++)
+                
+                // Draw the fill boundary region to a board
+                let boundary: Point[] = [];
+                let boundaryBoard = this.board.buffer(0);
+                this.board.floodf(action.points, (point: Point) =>
                 {
-                    let point = action.points[i];
-                    if (!this.startOk(point) || point.sub(lastPoint).abs().sum() !== 1)
+                    if (this.board.get(point) === color)
                     {
-                        throw new Error('Game.play() failed: points are invalid');
-                    }
-                    lastPoint = point;
-                    if (point.x < keyPoint.x || (point.x === keyPoint.x && point.y < keyPoint.y))
-                    {
-                        keyPoint = point;
-                        keyIndex = i;
-                    }
-                }
-
-                // The loop is in counterclockwise order if and only if the key point's successor has a greater y coordinate.
-                // The successor differs from the key point on exactly one axis. If it has the same y coordinate then it must
-                // have a greater x coordinate since no point has a lesser x coordinate than the key, and that implies clockwise
-                // order. If it has a lesser y coordinate then it share the key point's x coordinate, which contradicts that the
-                // key point has the least y coordinate of any point sharing its x coordinate.
-                if (action.points[(keyIndex + 1) % action.points.length].y <= keyPoint.y)
-                {
-                    // The loop is in clockwise order, reverse it.
-                    action.points.reverse();
-                }
-
-                // Make a border around the loop
-                // We can determine which of the neighbors of each pixel are part of the border by comparing
-                // its position to its successor's and predecessor's
-                let deltaIn = action.points[action.points.length - 1].sub(action.points[action.points.length - 2]);
-                let borderBoard = this.board.buffer(0);
-                for (let j = action.points.length - 1, k = 0; k < action.points.length; j = k, k++)
-                {
-                    let deltaOut = action.points[k].sub(action.points[j]);
-                    let ccw = new Point(deltaIn.y, -deltaIn.x);
-                    if (deltaIn.equal(deltaOut))
-                    {
-                        borderBoard.set(action.points[j].sub(ccw), 1);
-                    }
-                    else if (deltaOut.equal(ccw))
-                    {
-                        borderBoard.set(action.points[j].add(deltaIn), 1);
-                        borderBoard.set(action.points[j].sub(deltaOut), 1);
-                    }
-                    deltaIn = deltaOut;
-                }
-
-                // Flood fill the interior of the border
-                let floodStep = borderBoard.floodfStep(action.points, (point: Point) =>
-                {
-                    if (!borderBoard.get(point))
-                    {
-                        this.board.set(point, this.currentPlayer);
+                        boundary.push(point);
+                        boundaryBoard.set(point, 1);
                         return true;
                     }
                     return false;
                 });
 
-                return () => floodStep(1);
+                // Mark points which are not part of the boundary and are reachable from the edge of the canvas.
+                // These points are not contained by the boundary and will not be filled.
+                let border: Point[] = [];
+                let addBorder = (point: Point) =>
+                {
+                    if (boundaryBoard.get(point) === 0)
+                    {
+                        border.push(point);
+                    }
+                }
+                for (let i = 1; i < this.size - 1; i++)
+                {
+                    addBorder(new Point(0, i));
+                    addBorder(new Point(this.size - 1, i));
+                    addBorder(new Point(i, 0));
+                    addBorder(new Point(i, this.size - 1));
+                }
+                boundaryBoard.floodf(border, (point: Point) =>
+                {
+                    if (boundaryBoard.get(point) === 0)
+                    {
+                        boundaryBoard.set(point, 2);
+                        return true;
+                    }
+                    return false;
+                });
+
+                // Flood fill the interior of the boundary
+                let lassoStep = boundaryBoard.floodfStep(boundary, (point: Point) =>
+                {
+                    if (boundaryBoard.get(point) !== 2)
+                    {
+                        dest.set(point, color);
+                        return true;
+                    }
+                    return false;
+                });
+                return () => lassoStep(1);
             }
             default:
                 throw new Error('Game.play() failed: card type is invalid'); // should never happen even if an invalid message is received
