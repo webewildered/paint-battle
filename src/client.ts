@@ -702,39 +702,57 @@ export class Client extends EventEmitter
                         };
 
                         // Search for a path from the last point
-                        let found = false;
+                        let bestPath: Point[] = [];
+                        let bestLineBeginDistanceSq = Infinity; // From the flood point to the target
+                        let bestLineEndDistanceSq = 5;  // From the end of the straightline to the target
                         this.overlayBoard.floodf([last], (point: Point, getPath: () => Point[]) =>
                         {
-                            const maxDistanceSq = 25; // Search within a 5px radius
-                            if (found || !game.isOpen(point, game.currentPlayer) || last.distanceSquared(point) > maxDistanceSq)
+                            // Limit the search to a 10px radius from the last point
+                            const maxSearchDistanceSq = 100;
+                            if (!game.isOpen(point, game.currentPlayer) || last.distanceSquared(point) > maxSearchDistanceSq)
                             {
                                 return false;
                             }
 
-                            if (testLine(point))
+                            // Check if there is an open straight line from the current point to the target
+                            let lineEnd: Point = point;
+                            this.overlayBoard.linef(point, target, true, false, (point: Point) =>
                             {
-                                found = true;
-                                let path = getPath();
-                                path.reverse();
-                                path.push(point); // path implicitly ends with point, we need to paint to there
-                                path.push(target); // after reaching the end of the path, straigh line to target
-                                for (const pathPoint of path)
-                                {
-                                    if (pathPoint.equal(last))
-                                    {
-                                        continue;
-                                    }
-                                    paintTo(pathPoint);
-                                    if (paintPixels <= 0)
-                                    {
-                                        break;
-                                    }
-                                }
-                                return false;
+                                if (!game.isOpen(point, game.currentPlayer)) { return false; }
+                                lineEnd = point;
+                                return true;
+                            });
+
+                            // Check if the line is the closest to the target, or if tied, keep the shorter line
+                            let lineBeginDistanceSq = target.distanceSquared(point);
+                            let lineEndDistanceSq = target.distanceSquared(lineEnd);
+                            if (lineEndDistanceSq < bestLineEndDistanceSq || 
+                                (lineEndDistanceSq == bestLineEndDistanceSq && lineBeginDistanceSq < bestLineBeginDistanceSq))
+                            {
+                                bestLineEndDistanceSq = lineEndDistanceSq;
+                                bestLineBeginDistanceSq = lineBeginDistanceSq;
+                                bestPath = getPath();
+                                bestPath.reverse();
+                                bestPath.push(point); // path implicitly ends with point, we need to paint to there
+                                bestPath.push(lineEnd); // after reaching the end of the path, straigh line to target
                             }
 
                             return true;
                         });
+
+                        // Draw the found path
+                        for (const pathPoint of bestPath)
+                        {
+                            if (pathPoint.equal(last))
+                            {
+                                continue;
+                            }
+                            paintTo(pathPoint);
+                            if (paintPixels <= 0)
+                            {
+                                break;
+                            }
+                        }
 
                         if (paintPixels <= 0)
                         {
