@@ -35,8 +35,9 @@ export class Point
     floor() { return this.unary((a: number) => Math.floor(a)); }
     ceil() { return this.unary((a: number) => Math.ceil(a)); }
     sum() { return this.x + this.y; }
-    lengthSquared() { return this.dot(this); }
     distanceSquared(point: Point) { return this.sub(point).lengthSquared(); }
+    distance(point: Point) { return Math.sqrt(this.distanceSquared(point)); }
+    lengthSquared() { return this.dot(this); }
     length() { return Math.sqrt(this.lengthSquared()); }
     norm(): Point
     {
@@ -87,9 +88,9 @@ export class Aabb
     }
 }
 
-class Node extends Point
+export class Node extends Point
 {
-    constructor(point: Point, public cost: number, public predecessor: number = -1)
+    constructor(point: Point, public cost: number, public estimate: number = 0, public predecessor: number = -1)
     {
         super(point.x, point.y);
     }
@@ -286,10 +287,11 @@ export class Board
         let visited = this.dijkstraBuffer.take();
         
         // Visit pixels in cost order beginning from the start point
-        let queue = new PriorityQueue({ comparator: function(a: Node, b: Node) { return b.cost - a.cost; }}); // lower cost -> higher priority
+        let queue = new PriorityQueue({ comparator: function(a: Node, b: Node)
+            { return (b.cost + b.estimate) - (a.cost + a.estimate); }}); // lower cost -> higher priority
         for (const point of start)
         {
-            queue.enqueue(new Node(point, 0, visited.getIndex(point)));
+            queue.enqueue(new Node(point, 0, 0, visited.getIndex(point)));
         };
 
         // Track the bounding box of pixels visited
