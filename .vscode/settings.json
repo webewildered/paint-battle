@@ -10,5 +10,6 @@
     "search.exclude": {
         "**/bundle.js": false,
         "out": true // set this to false to include "out" folder in search results
-    }
+    },
+    "appService.defaultWebAppToDeploy": "/subscriptions/a0c3181c-7903-41ce-96f1-0267dcc5a0d0/resourceGroups/PaintBattleResourceGroup/providers/Microsoft.Web/sites/PaintBattle"
 }
